@@ -26,6 +26,8 @@ class DQN(nn.Module):
 
         # Third CNN captures fine-grained details like small changes in position, and movement direction
         self.conv3 = nn.Conv2d(64, 64, 3, stride=1)
+
+        # Flattened feature map from third CNN
         self.fc1 = nn.Linear(7 * 7 * 64, 512)
         self.out = nn.Linear(512, action_size)
 
