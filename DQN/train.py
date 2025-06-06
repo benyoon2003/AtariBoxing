@@ -49,9 +49,10 @@ class ReplayBuffer():
 
 
 class DQN():
-    def __init__(self, env: gym.Env, qnetwork: NeuralNetwork, buffer: ReplayBuffer, hyperparams: dict):
+    def __init__(self, env: gym.Env, qnetwork: NeuralNetwork, buffer: ReplayBuffer, hyperparams: dict, device):
+        self.device = device
         self.env = env
-        self.model = qnetwork   ## network for learning q values
+        self.model = qnetwork.to(self.device)  ## network for learning q values
         self.lr = hyperparams['lr']   ## learning rate
         self.gamma = hyperparams['gamma']   ## discount factor
         self.initial_eps = hyperparams['initial_eps']
@@ -66,13 +67,14 @@ class DQN():
     def eps_greedy(self, obs: torch.Tensor):
         '''Selects an action using epsilon-greedy.'''
 
+        obs = obs.to(self.device)
         rand = np.random.rand()
         if rand < self.eps:     ## choose random action
             return self.env.action_space.sample()
         else:    ## choose best action
             with torch.no_grad():
                 q_values = self.model(obs)
-                max_indices = torch.where(q_values == q_values.max())[0]
+                max_indices = torch.where(q_values == q_values.max())[0].cpu().numpy()
                 return np.random.choice(max_indices)
 
     def train(self, num_episodes):
@@ -81,7 +83,7 @@ class DQN():
             terminated = False
             truncated = False
             while not terminated and not truncated:
-                action = self.eps_greedy(torch.Tensor(obs))
+                action = self.eps_greedy(torch.tensor(obs, dtype=torch.float32))
                 new_obs, reward, terminated, truncated, info = self.env.step(action)  
                 self.buffer.add(obs, action, reward, new_obs, terminated)
                 self.update_step()
@@ -102,14 +104,17 @@ class DQN():
         
 
         for trajectory in trajectories:
-            pred = self.model(torch.Tensor(trajectory[0]))  ## get predicted q-values
+            state = torch.tensor(trajectory[0], dtype=torch.float32).to(self.device)
+            next_state = torch.tensor(trajectory[3], dtype=torch.float32).to(self.device)
+            pred = self.model(state)  ## get predicted q-values
             with torch.no_grad():
-                next_pred = self.model(torch.Tensor(trajectory[3]))
+                next_pred = self.model(next_state)  ## get next predicted q-values
 
-                max_indices = torch.where(next_pred == next_pred.max())[0]
+                max_indices = torch.where(next_pred == next_pred.max())[0].cpu().numpy()
                 a_prime = np.random.choice(max_indices)
             
                 target = pred.clone().detach()
+                target = target.to(self.device)
 
             if trajectory[4]:    ## if the episode is done
                 target[trajectory[1]] = trajectory[2]   ## target is just the reward for the given action
@@ -130,8 +135,9 @@ class DQN():
             total_reward = 0
             while not terminated and not truncated:
                 with torch.no_grad():
-                    q_values = self.model(torch.Tensor(obs))
-                    max_indices = torch.where(q_values == q_values.max())[0]
+                    obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device)
+                    q_values = self.model(obs_tensor)
+                    max_indices = torch.where(q_values == q_values.max())[0].cpu().numpy()
                     action = np.random.choice(max_indices)
                 new_obs, reward, terminated, truncated, info = self.env.step(action)
                 total_reward += reward
@@ -153,8 +159,8 @@ if __name__ == "__main__":
 
     
     env = gym.make("LunarLander-v2")
-    network = NeuralNetwork(8, env.action_space.n)
-    buffer = ReplayBuffer(100_000)
+    network = NeuralNetwork(8, env.action_space.n).to(device)
+    buffer = ReplayBuffer(10000)
     dqn = DQN(env, network, buffer, {
         'lr': 0.001,
         'gamma': 0.99,
@@ -162,7 +168,7 @@ if __name__ == "__main__":
         'eps_decay': 0.99999,
         'final_eps': 0.1,
         'sample_size': 32
-    })
+    }, device)
 
-    dqn.train(1_000_000)
+    dqn.train(10000)
     torch.save(dqn.model, "dqn_model")
