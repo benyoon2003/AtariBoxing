@@ -186,14 +186,17 @@ if __name__ == "__main__":
     env = gym.make("LunarLander-v2")
     network = NeuralNetwork(8, env.action_space.n).to(device)
     buffer = ReplayBuffer(10000)
+
+    num_episodes = 10_000
+    final_eps = 0.1
     dqn = DQN(env, network, buffer, {
         'lr': 0.001,
         'gamma': 0.99,
         'initial_eps': 1,
-        'eps_decay': 0.99999,
-        'final_eps': 0.1,
+        'eps_decay': np.exp(np.log(final_eps) / (num_episodes * 500 / 2)),     ## to decay to final_eps after about 50% of training
+        'final_eps': final_eps,
         'sample_size': 32
     }, device)
 
-    dqn.train(10000)
+    dqn.train(num_episodes)
     torch.save(dqn.model, "dqn_model")
