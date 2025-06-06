@@ -78,20 +78,25 @@ class DQN():
                 return np.random.choice(max_indices)
 
     def train(self, num_episodes):
+        reward_buffer = deque(maxlen=50)
         for episode in range(num_episodes):
             obs, info = self.env.reset()   ## get first observation
             terminated = False
             truncated = False
+            total_reward = 0
             while not terminated and not truncated:
-                action = self.eps_greedy(torch.tensor(obs, dtype=torch.float32))
+                action = self.eps_greedy(torch.tensor(obs, dtype=torch.float32, device=self.device))
                 new_obs, reward, terminated, truncated, info = self.env.step(action)  
+                total_reward += reward
                 self.buffer.add(obs, action, reward, new_obs, terminated)
                 self.update_step()
                 self.eps = max(self.eps * self.eps_decay, self.final_eps)
                 obs = new_obs
+            
+            reward_buffer.append(total_reward)
 
-            if episode % (num_episodes // 100) == 0:
-                print(f"Episode {episode} -- Averarge Reward: {self.evaluate()}")
+            if episode % (num_episodes // 20) == 0:
+                print(f"Episode {episode} -- Average Reward Over Last 50 episodes: {np.mean(reward_buffer)}")
 
 
     def update_step(self):
@@ -102,11 +107,11 @@ class DQN():
         except TypeError:   ## if not enough samples in buffer
             return
         
-        states = torch.stack([torch.tensor(t[0], dtype=torch.float32) for t in trajectories]).to(self.device)
-        actions = torch.tensor([t[1] for t in trajectories]).to(self.device)
-        rewards = torch.tensor([t[2] for t in trajectories], dtype=torch.float32).to(self.device)
-        next_states = torch.stack([torch.tensor(t[3], dtype=torch.float32) for t in trajectories]).to(self.device)
-        dones = torch.tensor([t[4] for t in trajectories], dtype=torch.bool).to(self.device)
+        states = torch.stack([torch.tensor(t[0], dtype=torch.float32, device=self.device) for t in trajectories])
+        actions = torch.tensor([t[1] for t in trajectories], device=self.device, dtype=torch.int32)
+        rewards = torch.tensor([t[2] for t in trajectories], dtype=torch.float32, device=self.device)
+        next_states = torch.stack([torch.tensor(t[3], dtype=torch.float32, device=self.device) for t in trajectories])
+        dones = torch.tensor([t[4] for t in trajectories], dtype=torch.bool, device=self.device)
         
         with torch.no_grad():
             next_q_values = self.model(next_states)
@@ -151,25 +156,25 @@ class DQN():
         #     self.optimizer.step()
         #     self.optimizer.zero_grad()
 
-    def evaluate(self):
-        all_rewards = []
-        for episode in range(100):
-            obs, info = self.env.reset()
-            terminated = False
-            truncated = False
-            total_reward = 0
-            while not terminated and not truncated:
-                with torch.no_grad():
-                    obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device)
-                    q_values = self.model(obs_tensor)
-                    max_indices = torch.where(q_values == q_values.max())[0].cpu().numpy()
-                    action = np.random.choice(max_indices)
-                new_obs, reward, terminated, truncated, info = self.env.step(action)
-                total_reward += reward
-                obs = new_obs
+    # def evaluate(self):
+    #     all_rewards = []
+    #     for episode in range(100):
+    #         obs, info = self.env.reset()
+    #         terminated = False
+    #         truncated = False
+    #         total_reward = 0
+    #         while not terminated and not truncated:
+    #             with torch.no_grad():
+    #                 obs_tensor = torch.tensor(obs, dtype=torch.float32, device=self.device)
+    #                 q_values = self.model(obs_tensor)
+    #                 max_indices = torch.where(q_values == q_values.max())[0].cpu().numpy()
+    #                 action = np.random.choice(max_indices)
+    #             new_obs, reward, terminated, truncated, info = self.env.step(action)
+    #             total_reward += reward
+    #             obs = new_obs
 
-            all_rewards.append(total_reward)
-        return np.mean(all_rewards)
+    #         all_rewards.append(total_reward)
+    #     return np.mean(all_rewards)
                 
 
 if __name__ == "__main__":
@@ -187,16 +192,23 @@ if __name__ == "__main__":
     network = NeuralNetwork(8, env.action_space.n).to(device)
     buffer = ReplayBuffer(10000)
 
-    num_episodes = 10_000
+    num_episodes = 1_000
     final_eps = 0.1
+    average_steps_per_episode = 150
     dqn = DQN(env, network, buffer, {
         'lr': 0.001,
         'gamma': 0.99,
         'initial_eps': 1,
-        'eps_decay': np.exp(np.log(final_eps) / (num_episodes * 500 / 2)),     ## to decay to final_eps after about 50% of training
+        'eps_decay': np.exp(np.log(final_eps) / (num_episodes * .75 * average_steps_per_episode)),     ## to decay to final_eps after about 75% of training
         'final_eps': final_eps,
         'sample_size': 32
     }, device)
 
     dqn.train(num_episodes)
-    torch.save(dqn.model, "dqn_model")
+
+
+    torch.save(dqn.model, "dqn_model.pth")
+
+    # from google.colab import drive
+    # drive.mount('/content/drive')
+    # torch.save(dqn.model, '/content/drive/MyDrive/dqn_model2')
