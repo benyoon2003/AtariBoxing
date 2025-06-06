@@ -90,7 +90,7 @@ class DQN():
                 self.eps = max(self.eps * self.eps_decay, self.final_eps)
                 obs = new_obs
 
-            if episode % (num_episodes / 100) == 0:
+            if episode % (num_episodes // 100) == 0:
                 print(f"Episode {episode} -- Averarge Reward: {self.evaluate()}")
 
 
@@ -102,29 +102,54 @@ class DQN():
         except TypeError:   ## if not enough samples in buffer
             return
         
+        states = torch.stack([torch.tensor(t[0], dtype=torch.float32) for t in trajectories]).to(self.device)
+        actions = torch.tensor([t[1] for t in trajectories]).to(self.device)
+        rewards = torch.tensor([t[2] for t in trajectories], dtype=torch.float32).to(self.device)
+        next_states = torch.stack([torch.tensor(t[3], dtype=torch.float32) for t in trajectories]).to(self.device)
+        dones = torch.tensor([t[4] for t in trajectories], dtype=torch.bool).to(self.device)
+        
+        with torch.no_grad():
+            next_q_values = self.model(next_states)
+            max_next_q_values = next_q_values.max(dim=1)[0]
+            targets = rewards + (1 - dones.float()) * self.gamma * max_next_q_values
 
-        for trajectory in trajectories:
-            state = torch.tensor(trajectory[0], dtype=torch.float32).to(self.device)
-            next_state = torch.tensor(trajectory[3], dtype=torch.float32).to(self.device)
-            pred = self.model(state)  ## get predicted q-values
-            with torch.no_grad():
-                next_pred = self.model(next_state)  ## get next predicted q-values
+        pred = self.model(states)
+        target = pred.clone().detach()    ## change predictions only at index of action taken, otherwise 
+                                                                  ## stay the same as predictions
 
-                max_indices = torch.where(next_pred == next_pred.max())[0].cpu().numpy()
-                a_prime = np.random.choice(max_indices)
+        target[range(self.sample_size), actions] = targets
+
+
+        loss = self.loss_fn(pred, target)
+
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
             
-                target = pred.clone().detach()
-                target = target.to(self.device)
 
-            if trajectory[4]:    ## if the episode is done
-                target[trajectory[1]] = trajectory[2]   ## target is just the reward for the given action
-            else:    ## the episode is not done
-                target[trajectory[1]] = trajectory[2] + self.gamma * next_pred[a_prime]     ## bellman equation 
+        # for trajectory in trajectories:
+        #     state = torch.tensor(trajectory[0], dtype=torch.float32).to(self.device)
+        #     next_state = torch.tensor(trajectory[3], dtype=torch.float32).to(self.device)
+        #     pred = self.model(state)  ## get predicted q-values
+        #     with torch.no_grad():
+        #         next_pred = self.model(next_state)  ## get next predicted q-values
 
-            loss = self.loss_fn(pred, target)
-            loss.backward()
-            self.optimizer.step()
-            self.optimizer.zero_grad()
+        #         max_indices = torch.where(next_pred == next_pred.max())[0].cpu().numpy()
+        #         a_prime = np.random.choice(max_indices)
+            
+        #         target = pred.clone().detach()
+        #         target = target.to(self.device)
+
+        #     if trajectory[4]:    ## if the episode is done
+        #         target[trajectory[1]] = trajectory[2]   ## target is just the reward for the given action
+        #     else:    ## the episode is not done
+        #         target[trajectory[1]] = trajectory[2] + self.gamma * next_pred[a_prime]     ## bellman equation 
+
+        #     loss = self.loss_fn(pred, target)
+        #     loss.backward()
+        #     self.optimizer.step()
+        #     self.optimizer.zero_grad()
 
     def evaluate(self):
         all_rewards = []
