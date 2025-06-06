@@ -5,10 +5,9 @@ import numpy as np
 from collections import deque
 import random
 
-# from gymnasium.envs import box2d
+## might need to run these commands first
 
-
-
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 # pip install box2d pygame
 
 
@@ -178,7 +177,7 @@ class DQN():
                 
 
 if __name__ == "__main__":
-    device = device = (
+    device = (
     "cuda"
     if torch.cuda.is_available()
     else "mps"
@@ -187,16 +186,21 @@ if __name__ == "__main__":
     )
     print(f"Using {device} device")
 
-    
-    env = gym.make("LunarLander-v2")
-    network = NeuralNetwork(8, env.action_space.n).to(device)
-    buffer = ReplayBuffer(10000)
+    # print("Torch version:", torch.__version__)
+    # print("CUDA available:", torch.cuda.is_available())
+    # print("GPU name:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "No GPU")
 
     num_episodes = 1_000
     final_eps = 0.1
     average_steps_per_episode = 150
+    
+    env = gym.make("LunarLander-v2")
+    network = NeuralNetwork(8, env.action_space.n).to(device)
+    buffer = ReplayBuffer(int(0.2 * num_episodes * average_steps_per_episode))
+    # buffer = ReplayBuffer(10_000)
+
     dqn = DQN(env, network, buffer, {
-        'lr': 0.001,
+        'lr': 0.0005,
         'gamma': 0.99,
         'initial_eps': 1,
         'eps_decay': np.exp(np.log(final_eps) / (num_episodes * .75 * average_steps_per_episode)),     ## to decay to final_eps after about 75% of training
@@ -208,7 +212,3 @@ if __name__ == "__main__":
 
 
     torch.save(dqn.model, "./DQN/dqn_model.pth")
-
-    # from google.colab import drive
-    # drive.mount('/content/drive')
-    # torch.save(dqn.model, '/content/drive/MyDrive/dqn_model2')
