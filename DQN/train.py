@@ -32,6 +32,9 @@ class NeuralNetwork(nn.Module):
         return x
     
 class ReplayBuffer():
+    '''Represents replay buffer for storing trajectories, uses
+    deque for automatic re-sizing and efficient removing/appending.'''
+
     def __init__(self, size):
         self.buffer = deque(maxlen=size)
 
@@ -40,7 +43,7 @@ class ReplayBuffer():
 
     def sample(self, sample_size):
         if len(self.buffer) < sample_size:
-            raise TypeError()
+            raise TypeError()    # if type error means sample size too small
         sampled_replays = random.sample(self.buffer, sample_size)
         return sampled_replays
 
@@ -48,12 +51,12 @@ class ReplayBuffer():
 class DQN():
     def __init__(self, env: gym.Env, qnetwork: NeuralNetwork, buffer: ReplayBuffer, hyperparams: dict):
         self.env = env
-        self.model = qnetwork
-        self.lr = hyperparams['lr']
-        self.gamma = hyperparams['gamma']
+        self.model = qnetwork   ## network for learning q values
+        self.lr = hyperparams['lr']   ## learning rate
+        self.gamma = hyperparams['gamma']   ## discount factor
         self.initial_eps = hyperparams['initial_eps']
         self.eps_decay = hyperparams['eps_decay']
-        self.final_eps = hyperparams['final_eps']
+        self.final_eps = hyperparams['final_eps']   ## lower boundary of eps
         self.sample_size = hyperparams['sample_size']
         self.eps = self.initial_eps
         self.buffer = buffer
@@ -61,10 +64,12 @@ class DQN():
         self.optimizer = torch.optim.RMSprop(self.model.parameters(), lr=self.lr)
 
     def eps_greedy(self, obs: torch.Tensor):
+        '''Selects an action using epsilon-greedy.'''
+
         rand = np.random.rand()
-        if rand < self.eps:
+        if rand < self.eps:     ## choose random action
             return self.env.action_space.sample()
-        else:
+        else:    ## choose best action
             with torch.no_grad():
                 q_values = self.model(obs)
                 max_indices = torch.where(q_values == q_values.max())[0]
@@ -72,12 +77,12 @@ class DQN():
 
     def train(self, num_episodes):
         for episode in range(num_episodes):
-            obs, info = self.env.reset()
+            obs, info = self.env.reset()   ## get first observation
             terminated = False
             truncated = False
             while not terminated and not truncated:
                 action = self.eps_greedy(torch.Tensor(obs))
-                new_obs, reward, terminated, truncated, info = self.env.step(action)
+                new_obs, reward, terminated, truncated, info = self.env.step(action)  
                 self.buffer.add(obs, action, reward, new_obs, terminated)
                 self.update_step()
                 self.eps = max(self.eps * self.eps_decay, self.final_eps)
@@ -87,16 +92,17 @@ class DQN():
                 print(f"Episode {episode} -- Averarge Reward: {self.evaluate()}")
 
 
-    ### need to fix this method
     def update_step(self):
+        '''Uses data from replay buffer to update the model.'''
+
         try:   
-            trajectories = self.buffer.sample(self.sample_size)
+            trajectories = self.buffer.sample(self.sample_size)   ## sample batch from buffer
         except TypeError:   ## if not enough samples in buffer
             return
         
 
         for trajectory in trajectories:
-            pred = self.model(torch.Tensor(trajectory[0]))
+            pred = self.model(torch.Tensor(trajectory[0]))  ## get predicted q-values
             with torch.no_grad():
                 next_pred = self.model(torch.Tensor(trajectory[3]))
 
@@ -108,7 +114,7 @@ class DQN():
             if trajectory[4]:    ## if the episode is done
                 target[trajectory[1]] = trajectory[2]   ## target is just the reward for the given action
             else:    ## the episode is not done
-                target[trajectory[1]] = trajectory[2] + self.gamma * next_pred[a_prime] 
+                target[trajectory[1]] = trajectory[2] + self.gamma * next_pred[a_prime]     ## bellman equation 
 
             loss = self.loss_fn(pred, target)
             loss.backward()
