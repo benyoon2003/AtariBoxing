@@ -1,3 +1,5 @@
+# Source/inspo for majority of implementation: https://docs.pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
+
 import argparse
 import gymnasium as gym
 import numpy as np
@@ -87,6 +89,7 @@ def select_action(state, policy_net, action_size, epsilon):
         return q_values.argmax().item() # Get index with max q value and convert it into int
 
 
+# Optimizes training with random sampling of ReplayMemory and backpropogating based on the loss from predicted and target Q values
 def optimize_model(memory, batch_size, target_net, policy_net, gamma, optimizer):
     if len(memory) < batch_size:
         return
@@ -95,7 +98,7 @@ def optimize_model(memory, batch_size, target_net, policy_net, gamma, optimizer)
     transitions = memory.sample(batch_size)
     batch = Transition(*zip(*transitions))
 
-    # Create mask of non-terminal states
+    # Create mask of non-terminal states. Terminal states have no next q value
     non_final_mask = torch.tensor(
         tuple(map(lambda s: s is not None, batch.next_state)),
         device=device, dtype=torch.bool
@@ -106,11 +109,12 @@ def optimize_model(memory, batch_size, target_net, policy_net, gamma, optimizer)
         np.array([s for s in batch.next_state if s is not None])
     ).to(device)
 
+    # Combine into single tensor for batch processing
     state_batch = torch.FloatTensor(np.array(batch.state)).to(device)
     action_batch = torch.LongTensor(batch.action).unsqueeze(1).to(device)
     reward_batch = torch.FloatTensor(batch.reward).unsqueeze(1).to(device)
 
-    # Compute Q(s_t, a) from policy_net
+    # Compute Q values for all actions
     state_action_values = policy_net(state_batch).gather(1, action_batch)
 
     # Compute V(s_{t+1}) for all next states using target_net
@@ -118,24 +122,25 @@ def optimize_model(memory, batch_size, target_net, policy_net, gamma, optimizer)
     with torch.no_grad():
         next_state_values[non_final_mask] = target_net(non_final_next_states).max(1).values
 
-    # Compute expected Q values
+    # Compute expected Q values using Bellman's eqn
     expected_state_action_values = (next_state_values * gamma) + reward_batch.squeeze(1)
 
-    # Use SmoothL1Loss (Huber)
+    # Use SmoothL1Loss (Huber) to get loss between predicted and target q values
     criterion = nn.SmoothL1Loss()
     loss = criterion(state_action_values.squeeze(), expected_state_action_values)
 
     # Backprop
-    optimizer.zero_grad()
-    loss.backward()
+    optimizer.zero_grad() # clear old gradient
+    loss.backward() # back pass thru network
     torch.nn.utils.clip_grad_value_(policy_net.parameters(), 100)  # gradient clipping
-    optimizer.step()
+    optimizer.step() # update network param based on loss
 
 
 def train(batch_size = 32, gamma = 0.99, epsilon = 1.0, epsilon_limit = 0.1, decay_factor = 0.995, LR = 1e-4, model_path = "models/dqn.pth", episodes = 100):   
     action_size = env.action_space.n # get num actions
-    state, info = env.reset()
+    state, info = env.reset() # reset env
 
+    # Policy net constantly updates with backprop while target net is updated just every episode for Bellman Equation
     policy_net = DQN(4, action_size).to(device)
     target_net = DQN(4, action_size).to(device)
     target_net.load_state_dict(policy_net.state_dict())
@@ -154,19 +159,18 @@ def train(batch_size = 32, gamma = 0.99, epsilon = 1.0, epsilon_limit = 0.1, dec
         done = False
 
         while not done:
-            action = select_action(state, policy_net, action_size, epsilon)
+            action = select_action(state, policy_net, action_size, epsilon) # Get action with epsilon greedy approach
             raw_next_state, reward, terminated, truncated, _ = env.step(action) # execute action
             done = terminated or truncated
             frames, processed_next_state = stack_frames(frames, raw_next_state, False) # get deque of last 4 frames
-
             memory.push(state, action, processed_next_state if not done else None, reward)
 
             state = processed_next_state
             total_reward += reward
             optimize_model(memory, batch_size, target_net, policy_net, gamma, optimizer)
 
-        epsilon = max(epsilon_limit, epsilon * decay_factor)
-        target_net.load_state_dict(policy_net.state_dict())
+        epsilon = max(epsilon_limit, epsilon * decay_factor) # prevent epsilon from becoming zero this could cause endless loops
+        target_net.load_state_dict(policy_net.state_dict()) # update target net every episode
         avg_reward += total_reward
 
         print(f"Episode {episode}, Total Reward: {total_reward}")
@@ -181,8 +185,9 @@ def train(batch_size = 32, gamma = 0.99, epsilon = 1.0, epsilon_limit = 0.1, dec
 
     # Append results to a CSV log file
     with open("logs/train_log.csv", "a") as log_file:
-        log_file.write(f"{model_path},{final_avg:.2f}\n")
+        log_file.write(f"{model_path},{avg_reward}\n")
 
+# Want to visualize the model actually working
 def evaluate(model_path = "models/dqn.pth", episodes=1):
     env = gym.make("ALE/Boxing-v5", render_mode="human")
     policy_net = DQN(4, env.action_space.n).to(device)

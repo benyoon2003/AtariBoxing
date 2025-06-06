@@ -1,0 +1,2 @@
+models/dqn_bs32_lr0.00005_gamma0.98_eps1.0_decay0.99_ep100.pth,1.37
+models/dqn_bs32_lr0.00005_gamma0.98_eps1.0_decay0.995_ep100.pth,1.7
