@@ -11,5 +11,22 @@ pip install -r requirements.txt
 To train your agent:
 python boxing.py --train
 
+Optional Params:
+              --batch_size
+              --gamma
+              --epsilon
+              --decay_factor
+              --LR
+              --episodes
+              --model_path
+
+To automatically tune for optimal params:
+bash fine_tune.sh
+
+logs diretory will show the trained models as well as their average rewards over however many episodes
+
 To visualize your agent playing the game:
 python boxing.py --eval
+
+Optional Params:
+              --episodes
