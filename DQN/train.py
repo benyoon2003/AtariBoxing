@@ -207,7 +207,7 @@ if __name__ == "__main__":
     dqn.train(num_episodes)
 
 
-    torch.save(dqn.model, "dqn_model.pth")
+    torch.save(dqn.model, "./DQN/dqn_model.pth")
 
     # from google.colab import drive
     # drive.mount('/content/drive')
