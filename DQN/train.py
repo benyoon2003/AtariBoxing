@@ -88,7 +88,7 @@ class DQN():
                 self.eps = max(self.eps * self.eps_decay, self.final_eps)
                 obs = new_obs
 
-            if episode % (num_episodes / 20) == 0:
+            if episode % (num_episodes / 100) == 0:
                 print(f"Episode {episode} -- Averarge Reward: {self.evaluate()}")
 
 
@@ -142,6 +142,16 @@ class DQN():
                 
 
 if __name__ == "__main__":
+    device = device = (
+    "cuda"
+    if torch.cuda.is_available()
+    else "mps"
+    if torch.backends.mps.is_available()
+    else "cpu"
+    )
+    print(f"Using {device} device")
+
+    
     env = gym.make("LunarLander-v2")
     network = NeuralNetwork(8, env.action_space.n)
     buffer = ReplayBuffer(100_000)
