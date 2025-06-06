@@ -3,8 +3,8 @@ import numpy as np
 import torch
 from train import NeuralNetwork
 
-# env = gym.make("LunarLander-v2")
-env = gym.make("LunarLander-v2", render_mode="human")
+env = gym.make("LunarLander-v2")
+# env = gym.make("LunarLander-v2", render_mode="human")
 
 model = torch.load("./DQN/dqn_model.pth")
 model.eval()
