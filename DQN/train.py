@@ -11,10 +11,6 @@ import random
 # pip install box2d pygame
 
 
-
-
-
-
 class NeuralNetwork(nn.Module):
     def __init__(self, input_dim, output_dim):
         super().__init__()
@@ -87,7 +83,7 @@ class DQN():
                 action = self.eps_greedy(torch.tensor(obs, dtype=torch.float32, device=self.device))
                 new_obs, reward, terminated, truncated, info = self.env.step(action)  
                 total_reward += reward
-                self.buffer.add(obs, action, reward, new_obs, terminated)
+                self.buffer.add(obs, action, reward, new_obs, terminated or truncated)
                 self.update_step()
                 self.eps = max(self.eps * self.eps_decay, self.final_eps)
                 obs = new_obs
@@ -130,50 +126,6 @@ class DQN():
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
-            
-
-        # for trajectory in trajectories:
-        #     state = torch.tensor(trajectory[0], dtype=torch.float32).to(self.device)
-        #     next_state = torch.tensor(trajectory[3], dtype=torch.float32).to(self.device)
-        #     pred = self.model(state)  ## get predicted q-values
-        #     with torch.no_grad():
-        #         next_pred = self.model(next_state)  ## get next predicted q-values
-
-        #         max_indices = torch.where(next_pred == next_pred.max())[0].cpu().numpy()
-        #         a_prime = np.random.choice(max_indices)
-            
-        #         target = pred.clone().detach()
-        #         target = target.to(self.device)
-
-        #     if trajectory[4]:    ## if the episode is done
-        #         target[trajectory[1]] = trajectory[2]   ## target is just the reward for the given action
-        #     else:    ## the episode is not done
-        #         target[trajectory[1]] = trajectory[2] + self.gamma * next_pred[a_prime]     ## bellman equation 
-
-        #     loss = self.loss_fn(pred, target)
-        #     loss.backward()
-        #     self.optimizer.step()
-        #     self.optimizer.zero_grad()
-
-    # def evaluate(self):
-    #     all_rewards = []
-    #     for episode in range(100):
-    #         obs, info = self.env.reset()
-    #         terminated = False
-    #         truncated = False
-    #         total_reward = 0
-    #         while not terminated and not truncated:
-    #             with torch.no_grad():
-    #                 obs_tensor = torch.tensor(obs, dtype=torch.float32, device=self.device)
-    #                 q_values = self.model(obs_tensor)
-    #                 max_indices = torch.where(q_values == q_values.max())[0].cpu().numpy()
-    #                 action = np.random.choice(max_indices)
-    #             new_obs, reward, terminated, truncated, info = self.env.step(action)
-    #             total_reward += reward
-    #             obs = new_obs
-
-    #         all_rewards.append(total_reward)
-    #     return np.mean(all_rewards)
                 
 
 if __name__ == "__main__":
