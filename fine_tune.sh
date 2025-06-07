@@ -1,7 +1,7 @@
 #!/bin/bash
 
-batch_sizes=(32 64)
-learning_rates=(0.00005 0.0001 0.0000)
+batch_sizes=(16 32) # batch size greater than 32 results in heavy lag
+learning_rates=(0.00005 0.0001 0.00001)
 gammas=(0.98 0.99 0.995)
 epsilons=(1.0)
 decay_factors=(0.99 0.995)
