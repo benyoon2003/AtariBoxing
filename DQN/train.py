@@ -195,7 +195,7 @@ if __name__ == "__main__":
         # 'eps_decay': 0.995,  
         'final_eps': final_eps,
         'sample_size': 32,
-        'update_freq': 10   ## how often to update the target network (in terms of episodes)
+        'update_freq': 1   ## how often to update the target network (in terms of episodes)
     }, device)
 
     dqn.train(num_episodes)
