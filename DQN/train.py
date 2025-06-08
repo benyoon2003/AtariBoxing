@@ -5,7 +5,6 @@ import numpy as np
 from collections import deque
 import random
 from copy import deepcopy
-import cv2
 from gym.wrappers import AtariPreprocessing, FrameStack
 
 ## might need to run these commands first
