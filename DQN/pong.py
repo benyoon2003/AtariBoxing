@@ -2,8 +2,11 @@ import gym
 import numpy as np
 import torch
 import cv2
+from gym.wrappers import AtariPreprocessing, FrameStack
 
-env = gym.make("ALE/Pong-v5", obs_type="grayscale")
+env = gym.make("ALE/Pong-v5", obs_type="grayscale", frameskip=1)
+env = AtariPreprocessing(env)
+env = FrameStack(env, num_stack=4)
 
 obs, info = env.reset()
 all_rewards = []
@@ -17,8 +20,8 @@ for _ in range(100):
     while not terminated and not truncated:
         action = env.action_space.sample()
         obs, reward, terminated, truncated, info = env.step(action)
-        frame_resized = cv2.resize(obs, (84, 84), interpolation=cv2.INTER_AREA)
-        # print(frame_resized / 255)
+        obs = torch.tensor(np.array(obs), dtype=torch.float32)
+        print(obs)
         rewards += reward
         steps += 1
 

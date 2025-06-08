@@ -6,6 +6,7 @@ from collections import deque
 import random
 from copy import deepcopy
 import cv2
+from gym.wrappers import AtariPreprocessing, FrameStack
 
 ## might need to run these commands first
 
@@ -39,8 +40,8 @@ class ReplayBuffer():
     def __init__(self, size):
         self.buffer = deque(maxlen=size)
 
-    def add(self, obs: torch.Tensor, action: int, reward: float, new_obs: torch.Tensor, done: bool):
-        self.buffer.append([obs, action, reward, new_obs, done])
+    def add(self, obs: torch.Tensor, action: int, reward: float, next_obs: torch.Tensor, done: bool):
+        self.buffer.append([obs, action, reward, next_obs, done])
 
     def sample(self, sample_size):
         if len(self.buffer) < sample_size:
@@ -67,17 +68,15 @@ class DQN():
         self.optimizer = torch.optim.RMSprop(self.online_model.parameters(), lr=self.lr)
         self.update_freq = hyperparams['update_freq']
 
-    def eps_greedy(self, stacked_obs: deque):
+    def eps_greedy(self, obs: torch.Tensor):
         '''Selects an action according to the last 4 observations using epsilon-greedy.'''
-        obs = deepcopy(stacked_obs)
-        obs = torch.cat(list(stacked_obs)).unsqueeze(0)
 
         rand = np.random.rand()
         if rand < self.eps:     ## choose random action
             return self.env.action_space.sample()
         else:    ## choose best action
             with torch.no_grad():
-                q_values = self.online_model(obs)
+                q_values = self.online_model(obs.unsqueeze(0))
                 max_indices = torch.where(q_values == q_values.max())[0].cpu().numpy()
                 return np.random.choice(max_indices)
 
@@ -85,45 +84,29 @@ class DQN():
         reward_buffer = deque(maxlen=50)
 
         for episode in range(num_episodes):
-            stacked_obs = deque(maxlen=4)    ## keeps last 4 frames
 
             obs, info = self.env.reset()   ## get first observation
-            stacked_obs.append(self._preprocess(obs))
 
             terminated = False
             truncated = False
             total_reward = 0
             while not terminated and not truncated:
-                action = self.eps_greedy(stacked_obs) if len(stacked_obs) == 4 else 0   ## do nothing for first 4 steps
-                new_obs, reward, terminated, truncated, info = self.env.step(action)  
-                new_stacked_obs = deepcopy(stacked_obs)
-                new_stacked_obs.append(self._preprocess(new_obs))
-                if len(stacked_obs) == 4:
-                        stacked_frames = self._stack_frames(stacked_obs)
-                        new_stacked_frames = self._stack_frames(new_stacked_obs)
-                        self.buffer.add(stacked_frames, action, reward, new_stacked_frames, terminated or truncated)
-                        self.update_step()
-                stacked_obs.append(self._preprocess(new_obs))
-
+                action = self.eps_greedy(torch.tensor(np.array(obs), dtype=torch.float32, device=self.device))
+                new_obs, reward, terminated, truncated, info = self.env.step(action) 
+                self.buffer.add(torch.tensor(np.array(obs), dtype=torch.float32, device=self.device), action, reward, torch.tensor(np.array(new_obs), dtype=torch.float32, device=self.device), terminated or truncated)
+                self.update_step()
 
                 total_reward += reward
                 self.eps = max(self.eps * self.eps_decay, self.final_eps)
             
             reward_buffer.append(total_reward)
+
             if episode % self.update_freq == 0:
                 self.target_model.load_state_dict(self.online_model.state_dict())
 
             if episode % (num_episodes // 20) == 0:
                 print(f"Episode {episode} -- Average Reward Over Last 50 episodes: {np.mean(reward_buffer)}")
 
-    def _preprocess(self, obs: np.ndarray):
-        '''Converts a grayscale observation to a 84 by 84 tensor with values between 0 and 1.'''
-        resized = cv2.resize(obs, (84, 84), interpolation=cv2.INTER_AREA)
-        resized = resized / 255.0
-        return torch.tensor(resized, dtype=torch.float32, device=self.device).unsqueeze(0)
-    
-    def _stack_frames(self, frames: deque):
-        return torch.cat(list(frames))
 
     def update_step(self):
         '''Uses data from replay buffer to update the model.'''
@@ -182,7 +165,11 @@ if __name__ == "__main__":
     final_eps = 0.1
     average_steps_per_episode = 1_000
     
-    env = gym.make("ALE/Pong-v5", obs_type="grayscale")
+    env = gym.make("ALE/Pong-v5", obs_type="grayscale", frameskip=1)
+    env = AtariPreprocessing(env)   ## Adds automatic frame skipping and frame preprocessing, as well as 
+                                    ## starting the environment stochastically by choosing to do nothing
+                                    ## for a random number of frames at start
+    env = FrameStack(env, num_stack=4)      ## Adds automatic frame stacking for better observability
     network = NeuralNetwork(env.action_space.n).to(device)
     buffer = ReplayBuffer(int(0.1 * num_episodes * average_steps_per_episode))
     # buffer = ReplayBuffer(1_000)
@@ -195,7 +182,7 @@ if __name__ == "__main__":
         # 'eps_decay': 0.995,  
         'final_eps': final_eps,
         'sample_size': 32,
-        'update_freq': 1   ## how often to update the target network (in terms of episodes)
+        'update_freq': 5  ## how often to update the target network (in terms of episodes)
     }, device)
 
     dqn.train(num_episodes)
