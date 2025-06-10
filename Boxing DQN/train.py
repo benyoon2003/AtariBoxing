@@ -63,7 +63,7 @@ class DQN():
         self.sample_size = hyperparams['sample_size']
         self.eps = self.initial_eps
         self.buffer = buffer
-        self.loss_fn = nn.MSELoss()
+        self.loss_fn = nn.SmoothL1Loss()
         self.optimizer = torch.optim.RMSprop(self.online_model.parameters(), lr=self.lr)
         self.update_freq = hyperparams['update_freq']
 
@@ -80,7 +80,7 @@ class DQN():
                 return np.random.choice(max_indices)
 
     def train(self, num_episodes: int):
-        reward_buffer = deque(maxlen=1)
+        reward_buffer = deque(maxlen=10)  ## buffer for keeping track of rewards over last 10 episodes
 
         for episode in range(num_episodes):
 
@@ -107,8 +107,9 @@ class DQN():
             if episode % self.update_freq == 0:
                 self.target_model.load_state_dict(self.online_model.state_dict())
 
-            # if episode % (num_episodes // 1) == 0:
-            print(f"Episode {episode} -- Reward Over Last episode: {np.mean(reward_buffer)}")
+            if episode % (num_episodes // 20) == 0:
+                print(f"Episode {episode} -- Reward Over Last 10 episodes: {np.mean(reward_buffer)}")
+                print(f"Epsilon: {self.eps}")
 
 
     def update_step(self):
@@ -165,11 +166,11 @@ if __name__ == "__main__":
     # print("CUDA available:", torch.cuda.is_available())
     # print("GPU name:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "No GPU")
 
-    num_episodes = 100
+    num_episodes = 1000
     final_eps = 0.1
     average_steps_per_episode = 1_000
     
-    env = gym.make("ALE/Boxing-v5", obs_type="grayscale", frameskip=1)
+    env = gym.make("ALE/Pong-v5", obs_type="grayscale", frameskip=1)
     env = AtariPreprocessing(env)   ## Adds automatic frame skipping and frame preprocessing, as well as 
                                     ## starting the environment stochastically by choosing to do nothing
                                     ## for a random number of frames at start
@@ -179,8 +180,8 @@ if __name__ == "__main__":
     # buffer = ReplayBuffer(3_000)
 
     dqn = DQN(env, network, buffer, {
-        'lr': 0.00005,
-        'gamma': 0.995,
+        'lr': 0.0001,
+        'gamma': 0.99,
         'initial_eps': 1.0,
         # 'eps_decay': np.exp(np.log(final_eps) / (num_episodes * .5 * average_steps_per_episode)),     ## to decay to final_eps after about 50% of training
         # 'eps_decay': 0.995,  

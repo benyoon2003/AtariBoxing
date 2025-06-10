@@ -4,14 +4,14 @@ import torch
 import cv2
 from gym.wrappers import AtariPreprocessing, FrameStack
 
-env = gym.make("ALE/Pong-v5", obs_type="grayscale", frameskip=1)
+env = gym.make("ALE/Boxing-v5", obs_type="grayscale", frameskip=1)
 env = AtariPreprocessing(env)
 env = FrameStack(env, num_stack=4)
 
 obs, info = env.reset()
 all_rewards = []
 all_steps = []
-for _ in range(100):
+for _ in range(10):
     obs, info = env.reset()
     terminated = False
     truncated = False
@@ -21,7 +21,7 @@ for _ in range(100):
         action = env.action_space.sample()
         obs, reward, terminated, truncated, info = env.step(action)
         obs = torch.tensor(np.array(obs), dtype=torch.float32)
-        print(obs)
+        # print(obs)
         rewards += reward
         steps += 1
 
