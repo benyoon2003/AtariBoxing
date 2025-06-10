@@ -90,9 +90,13 @@ class DQN():
             truncated = False
             total_reward = 0
             while not terminated and not truncated:
-                action = self.eps_greedy(torch.tensor(np.array(obs), dtype=torch.float32, device=self.device))
+                action = self.eps_greedy(torch.tensor(np.array(obs), dtype=torch.float32, device=self.device) / 255.0)
                 new_obs, reward, terminated, truncated, info = self.env.step(action) 
-                self.buffer.add(torch.tensor(np.array(obs), dtype=torch.float32, device=self.device), action, reward, torch.tensor(np.array(new_obs), dtype=torch.float32, device=self.device), terminated or truncated)
+                self.buffer.add(torch.tensor(np.array(obs), dtype=torch.float32, device=self.device) / 255.0, 
+                                action, 
+                                reward, 
+                                torch.tensor(np.array(new_obs), dtype=torch.float32, device=self.device) / 255.0, 
+                                terminated or truncated)
                 self.update_step()
 
                 total_reward += reward
@@ -116,7 +120,7 @@ class DQN():
             return
         
         states = torch.stack([t[0] for t in trajectories])
-        actions = torch.tensor([t[1] for t in trajectories], device=self.device, dtype=torch.int32)
+        actions = torch.tensor([t[1] for t in trajectories], device=self.device, dtype=torch.int64)
         rewards = torch.tensor([t[2] for t in trajectories], dtype=torch.float32, device=self.device)
         next_states = torch.stack([t[3] for t in trajectories])
         dones = torch.tensor([t[4] for t in trajectories], dtype=torch.bool, device=self.device)
@@ -128,13 +132,14 @@ class DQN():
             max_q_values_target = next_q_values_target[range(self.sample_size), best_actions]  ## get q values for best actions from target model
             targets = rewards + (1 - dones.float()) * self.gamma * max_q_values_target
 
+        # print(states.shape)
+        # print(states)
         pred = self.online_model(states)
         target = pred.clone().detach()    ## change predictions only at index of action taken, otherwise 
                                                                   ## stay the same as predictions
 
         target[range(self.sample_size), actions] = targets
-
-
+        
         loss = self.loss_fn(pred, target)
 
 
@@ -160,7 +165,7 @@ if __name__ == "__main__":
     # print("CUDA available:", torch.cuda.is_available())
     # print("GPU name:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "No GPU")
 
-    num_episodes = 500
+    num_episodes = 10_000
     final_eps = 0.1
     average_steps_per_episode = 1_000
     
@@ -170,14 +175,14 @@ if __name__ == "__main__":
                                     ## for a random number of frames at start
     env = FrameStack(env, num_stack=4)      ## Adds automatic frame stacking for better observability
     network = NeuralNetwork(env.action_space.n).to(device)
-    buffer = ReplayBuffer(int(0.1 * num_episodes * average_steps_per_episode))
-    # buffer = ReplayBuffer(1_000)
+    # buffer = ReplayBuffer(int(0.1 * num_episodes * average_steps_per_episode))
+    buffer = ReplayBuffer(3_000)
 
     dqn = DQN(env, network, buffer, {
-        'lr': 0.00005,
+        'lr': 0.0001,
         'gamma': 0.995,
         'initial_eps': 1,
-        'eps_decay': np.exp(np.log(final_eps) / (num_episodes * .75 * average_steps_per_episode)),     ## to decay to final_eps after about 75% of training
+        'eps_decay': np.exp(np.log(final_eps) / (num_episodes * .5 * average_steps_per_episode)),     ## to decay to final_eps after about 50% of training
         # 'eps_decay': 0.995,  
         'final_eps': final_eps,
         'sample_size': 32,
