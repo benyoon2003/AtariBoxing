@@ -1,11 +1,11 @@
-from copy import deepcopy
 import torch
 from torch import nn
 import gym
 import numpy as np
 from collections import deque
 import random
-from gym.wrappers import AtariPreprocessing
+from copy import deepcopy
+from gym.wrappers import AtariPreprocessing, FrameStack
 
 ## might need to run these commands first
 
@@ -14,19 +14,23 @@ from gym.wrappers import AtariPreprocessing
 
 
 class NeuralNetwork(nn.Module):
-    def __init__(self, input_dim, output_dim):
+    def __init__(self, output_dim):
         super().__init__()
-        self.linear_relu_stack = nn.Sequential(
-            nn.Linear(input_dim, 128),
+        self.network = nn.Sequential(
+            nn.Conv2d(4, 16, kernel_size=8, stride=4),
             nn.ReLU(),
-            nn.Linear(128, 128),
+            nn.Conv2d(16, 32, kernel_size=4, stride=2),
             nn.ReLU(),
-            nn.Linear(128, output_dim)
+            nn.Flatten(),
+            nn.Linear(32 * 9 * 9, 256),
+            nn.ReLU(),
+            nn.Linear(256, output_dim)
         )
 
     def forward(self, x: torch.Tensor):
-        x = self.linear_relu_stack(x)
+        x = self.network(x)
         return x
+    
     
 class ReplayBuffer():
     '''Represents replay buffer for storing trajectories, uses
@@ -35,12 +39,12 @@ class ReplayBuffer():
     def __init__(self, size):
         self.buffer = deque(maxlen=size)
 
-    def add(self, obs: np.ndarray, action: int, reward: float, new_obs: np.ndarray, terminated: bool):
-        self.buffer.append([obs, action, reward, new_obs, terminated])
+    def add(self, obs: np.array, action: int, reward: float, next_obs: np.array, done: bool):
+        self.buffer.append([obs, action, reward, next_obs, done])
 
     def sample(self, sample_size):
         if len(self.buffer) < sample_size:
-            raise TypeError()    # if type error means sample size too small
+            raise ValueError()    # if value error means sample size too small
         sampled_replays = random.sample(self.buffer, sample_size)
         return sampled_replays
 
@@ -49,7 +53,7 @@ class DQN():
     def __init__(self, env: gym.Env, qnetwork: NeuralNetwork, buffer: ReplayBuffer, hyperparams: dict, device):
         self.device = device
         self.env = env
-        self.online_model = qnetwork.to(self.device)  ## network for learning q values
+        self.online_model = qnetwork.to(self.device)  ## network for learning q values and selecting actions
         self.target_model = deepcopy(qnetwork).to(self.device)    ## target network for better convergence (only updated periodically)
         self.lr = hyperparams['lr']   ## learning rate
         self.gamma = hyperparams['gamma']   ## discount factor
@@ -64,41 +68,47 @@ class DQN():
         self.update_freq = hyperparams['update_freq']
 
     def eps_greedy(self, obs: torch.Tensor):
-        '''Selects an action using epsilon-greedy.'''
+        '''Selects an action according to the last 4 observations using epsilon-greedy.'''
 
-        obs = obs.to(self.device)
         rand = np.random.rand()
         if rand < self.eps:     ## choose random action
             return self.env.action_space.sample()
         else:    ## choose best action
             with torch.no_grad():
-                q_values = self.online_model(obs)
+                q_values = self.online_model(obs.unsqueeze(0))
                 max_indices = torch.where(q_values == q_values.max())[0].cpu().numpy()
                 return np.random.choice(max_indices)
 
-    def train(self, num_episodes):
-        reward_buffer = deque(maxlen=50)
+    def train(self, num_episodes: int):
+        reward_buffer = deque(maxlen=1)
+
         for episode in range(num_episodes):
+
             obs, info = self.env.reset()   ## get first observation
+
             terminated = False
             truncated = False
             total_reward = 0
             while not terminated and not truncated:
-                action = self.eps_greedy(torch.tensor(obs, dtype=torch.float32, device=self.device))
-                new_obs, reward, terminated, truncated, info = self.env.step(action)  
-                total_reward += reward
-                self.buffer.add(obs, action, reward, new_obs, terminated or truncated)
+                action = self.eps_greedy(torch.tensor(np.array(obs), dtype=torch.float32, device=self.device) / 255.0)
+                new_obs, reward, terminated, truncated, info = self.env.step(action) 
+                self.buffer.add(np.array(obs) / 255.0, 
+                                action, 
+                                reward, 
+                                np.array(new_obs) / 255.0, 
+                                terminated or truncated)
                 self.update_step()
-                self.eps = max(self.eps * self.eps_decay, self.final_eps)
-                obs = new_obs
+
+                total_reward += reward
+            self.eps = max(self.eps * self.eps_decay, self.final_eps)
             
             reward_buffer.append(total_reward)
 
             if episode % self.update_freq == 0:
                 self.target_model.load_state_dict(self.online_model.state_dict())
 
-            if episode % (num_episodes // 20) == 0:
-                print(f"Episode {episode} -- Average Reward Over Last 50 episodes: {np.mean(reward_buffer)}")
+            # if episode % (num_episodes // 1) == 0:
+            print(f"Episode {episode} -- Reward Over Last episode: {np.mean(reward_buffer)}")
 
 
     def update_step(self):
@@ -106,11 +116,11 @@ class DQN():
 
         try:   
             trajectories = self.buffer.sample(self.sample_size)   ## sample batch from buffer
-        except TypeError:   ## if not enough samples in buffer
+        except ValueError:   ## if not enough samples in buffer
             return
         
         states = torch.stack([torch.tensor(t[0], dtype=torch.float32, device=self.device) for t in trajectories])
-        actions = torch.tensor([t[1] for t in trajectories], device=self.device, dtype=torch.int32)
+        actions = torch.tensor([t[1] for t in trajectories], device=self.device, dtype=torch.int64)
         rewards = torch.tensor([t[2] for t in trajectories], dtype=torch.float32, device=self.device)
         next_states = torch.stack([torch.tensor(t[3], dtype=torch.float32, device=self.device) for t in trajectories])
         dones = torch.tensor([t[4] for t in trajectories], dtype=torch.bool, device=self.device)
@@ -137,6 +147,8 @@ class DQN():
         loss.backward()
         self.optimizer.step()
 
+        torch.cuda.empty_cache()  ## clear cache to avoid memory issues, especially on GPU
+    
                 
 
 if __name__ == "__main__":
@@ -153,26 +165,32 @@ if __name__ == "__main__":
     # print("CUDA available:", torch.cuda.is_available())
     # print("GPU name:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "No GPU")
 
-    num_episodes = 1_000
+    num_episodes = 100
     final_eps = 0.1
-    average_steps_per_episode = 150
+    average_steps_per_episode = 1_000
     
-    env = gym.make("LunarLander-v2")
-    network = NeuralNetwork(8, env.action_space.n).to(device)
-    buffer = ReplayBuffer(int(0.2 * num_episodes * average_steps_per_episode))
-    # buffer = ReplayBuffer(10_000)
+    env = gym.make("ALE/Boxing-v5", obs_type="grayscale", frameskip=1)
+    env = AtariPreprocessing(env)   ## Adds automatic frame skipping and frame preprocessing, as well as 
+                                    ## starting the environment stochastically by choosing to do nothing
+                                    ## for a random number of frames at start
+    env = FrameStack(env, num_stack=4)      ## Adds automatic frame stacking for better observability
+    network = NeuralNetwork(env.action_space.n).to(device)
+    buffer = ReplayBuffer(int(0.1 * num_episodes * average_steps_per_episode))
+    # buffer = ReplayBuffer(3_000)
 
     dqn = DQN(env, network, buffer, {
-        'lr': 0.0005,
-        'gamma': 0.99,
-        'initial_eps': 1,
-        'eps_decay': np.exp(np.log(final_eps) / (num_episodes * .75 * average_steps_per_episode)),     ## to decay to final_eps after about 75% of training
+        'lr': 0.00005,
+        'gamma': 0.995,
+        'initial_eps': 1.0,
+        # 'eps_decay': np.exp(np.log(final_eps) / (num_episodes * .5 * average_steps_per_episode)),     ## to decay to final_eps after about 50% of training
+        # 'eps_decay': 0.995,  
+        'eps_decay': np.exp(np.log(final_eps) / (num_episodes * 0.5)),     ## to decay to final_eps after about 50% of training
         'final_eps': final_eps,
         'sample_size': 32,
-        'update_freq': 3
+        'update_freq': 1  ## how often to update the target network (in terms of episodes)
     }, device)
 
     dqn.train(num_episodes)
 
 
-    torch.save(dqn.model, "./DQN/dqn_model.pth")
+    torch.save(dqn.online_model, "./Boxing DQN/dqn_model.pth")
