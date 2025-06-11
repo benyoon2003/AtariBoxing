@@ -25,7 +25,7 @@ def convertActions(act_dir):
     path = os.getcwd() + "/" + act_dir
 
     # because the .DS_Store file exists for some reason - i have no idea what it is but if it stops existing this should still throw the exception
-    if len(os.listdir(path)) <= 1: 
+    if len(os.listdir(path)) < 1: 
         raise Exception("No files found in " + path + " directory when loading actions!")
 
     for file in os.listdir(path):
@@ -43,7 +43,7 @@ def convertObservations(obs_dir):
     path = os.getcwd() + "/" + obs_dir
 
     # because the .DS_Store file exists for some reason - i have no idea what it is but if it stops existing this should still throw the exception
-    if len(os.listdir(path)) <= 1: 
+    if len(os.listdir(path)) < 1: 
         raise Exception("No files found in " + path + " directory when loading actions!")
     
     number_of_added_files = 0
@@ -76,22 +76,32 @@ class CustomDataset(Dataset):
         return len(self.actions)
 
     def __getitem__(self, idx):
-        observation = torch.from_numpy(self.obs.get(idx))
-        observation = observation.to(torch.double)
-        action = self.actions.iloc[idx, 0]
+        observation = self.obs.get(idx)
+
+        # Convert to float32 and normalize to [0, 1]
+        observation = torch.tensor(observation, dtype=torch.float32) / 255.0
+
+        # Add a channel dimension (C, H, W) expected by Conv2d
+        if len(observation.shape) == 2:
+            observation = observation.unsqueeze(0)
+
+        action = int(self.actions.iloc[idx, 0])  # make sure it's an int for CrossEntropyLoss
+
         if self.transform:
             observation = self.transform(observation)
         if self.target_transform:
             action = self.target_transform(action)
+
         return observation, action
+
     
 dataset = CustomDataset('actions', 'observations')
 
 #hyperparams
 
 learning_rate = 1e-3
-batch_size = 64
-epochs = 3
+batch_size = 32
+epochs = 10
 
 
 train_data, test_data = torch.utils.data.random_split(dataset, [0.8, 0.2])
@@ -114,22 +124,35 @@ print(f"Using {device} device")
 class NeuralNetwork(nn.Module):
     def __init__(self):
         super().__init__()
-        self.flatten = nn.Flatten()
-        self.linear_relu_stack = nn.Sequential(
-            nn.Linear(33600, 33600),
+
+        self.conv_stack = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=8, stride=4),  # Input: (1, H, W)
             nn.ReLU(),
-            nn.Linear(33600, 3600),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2),
             nn.ReLU(),
-            nn.Linear(3600, 100),
-            nn.ReLU(),
-            nn.Linear(100, 18),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1),
+            nn.ReLU()
         )
-        self.double()
-    
+
+        # Dummy forward pass to calculate flattened size
+        with torch.no_grad():
+            dummy_input = torch.zeros(1, 1, 210, 160)  # adjust to your actual input H, W
+            dummy_output = self.conv_stack(dummy_input)
+            flattened_size = dummy_output.view(1, -1).shape[1]
+
+        self.fc_stack = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(flattened_size, 512),
+            nn.ReLU(),
+            nn.Linear(512, 18)  # Replace 18 with actual number of actions
+        )
+
     def forward(self, x):
-        x = self.flatten(x)
-        logits = self.linear_relu_stack(x)
-        return logits
+        x = self.conv_stack(x)
+        x = self.fc_stack(x)
+        return x
+
+
 
 model = NeuralNetwork()
 
