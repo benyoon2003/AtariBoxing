@@ -17,7 +17,7 @@ class NeuralNetwork(nn.Module):
     def __init__(self, output_dim):
         super().__init__()
         self.network = nn.Sequential(
-            nn.Conv2d(4, 16, kernel_size=8, stride=4),
+            nn.Conv2d(3, 16, kernel_size=8, stride=4),
             nn.ReLU(),
             nn.Conv2d(16, 32, kernel_size=4, stride=2),
             nn.ReLU(),
@@ -39,7 +39,7 @@ class ReplayBuffer():
     def __init__(self, size):
         self.buffer = deque(maxlen=size)
 
-    def add(self, obs: np.array, action: int, reward: float, next_obs: np.array, done: bool):
+    def add(self, obs: np.ndarray, action: int, reward: float, next_obs: np.ndarray, done: bool):
         self.buffer.append([obs, action, reward, next_obs, done])
 
     def sample(self, sample_size):
@@ -63,7 +63,7 @@ class DQN():
         self.sample_size = hyperparams['sample_size']
         self.eps = self.initial_eps
         self.buffer = buffer
-        self.loss_fn = nn.SmoothL1Loss()
+        self.loss_fn = nn.MSELoss()
         self.optimizer = torch.optim.RMSprop(self.online_model.parameters(), lr=self.lr)
         self.update_freq = hyperparams['update_freq']
 
@@ -76,8 +76,12 @@ class DQN():
         else:    ## choose best action
             with torch.no_grad():
                 q_values = self.online_model(obs.unsqueeze(0))
-                max_indices = torch.where(q_values == q_values.max())[0].cpu().numpy()
-                return np.random.choice(max_indices)
+                q_values = q_values.cpu().numpy().squeeze()  
+                # print(q_values)
+                max_indices = np.where(q_values == q_values.max())[0]
+                action = np.random.choice(max_indices)  ## choose one of the best actions randomly
+                # print(action)
+                return action
 
     def train(self, num_frames: int):
         reward_buffer = deque(maxlen=10)  ## buffer for keeping track of rewards over last 10 episodes
@@ -86,7 +90,6 @@ class DQN():
 
         while frames < num_frames:
             episodes += 1
-
             obs, info = self.env.reset()   ## get first observation
 
             terminated = False
@@ -96,7 +99,6 @@ class DQN():
                 action = self.eps_greedy(torch.tensor(np.array(obs), dtype=torch.float32, device=self.device) / 255.0)
                 new_obs, reward, terminated, truncated, info = self.env.step(action) 
                 frames += 1
-                reward = np.clip(reward, -1, 1)
                 self.buffer.add(np.array(obs) / 255.0, 
                                 action, 
                                 reward, 
@@ -106,19 +108,23 @@ class DQN():
 
                 total_reward += reward
                 self.eps = max(self.eps * self.eps_decay, self.final_eps)
+                obs = new_obs
             
             reward_buffer.append(total_reward)
 
             if episodes % self.update_freq == 0:
                 self.target_model.load_state_dict(self.online_model.state_dict())
 
-            if episodes % 20 == 0:
+            if episodes % 10 == 0:
                 print(f"Episode {episodes} -- Reward Over Last 10 episodes: {np.mean(reward_buffer)}")
                 print(f"Epsilon: {self.eps}")
 
 
     def update_step(self):
         '''Uses data from replay buffer to update the model.'''
+
+        if len(self.buffer.buffer) < 10_000:
+            return
 
         try:   
             trajectories = self.buffer.sample(self.sample_size)   ## sample batch from buffer
@@ -153,7 +159,7 @@ class DQN():
         loss.backward()
         self.optimizer.step()
 
-        torch.cuda.empty_cache()  ## clear cache to avoid memory issues, especially on GPU
+        # torch.cuda.empty_cache()  ## clear cache to avoid memory issues, especially on GPU
     
                 
 
@@ -174,22 +180,22 @@ if __name__ == "__main__":
     # num_episodes = 250
     final_eps = 0.1
     # average_steps_per_episode = 1_000
-    num_frames = 250_000
+    num_frames = 1_000_000
     
-    env = gym.make("ALE/Breakout-v5", obs_type="grayscale", frameskip=1)
+    env = gym.make("ALE/Boxing-v5", obs_type="grayscale", frameskip=1)
     env = AtariPreprocessing(env)   ## Adds automatic frame skipping and frame preprocessing, as well as 
                                     ## starting the environment stochastically by choosing to do nothing
                                     ## for a random number of frames at start
-    env = FrameStack(env, num_stack=4)      ## Adds automatic frame stacking for better observability
+    env = FrameStack(env, num_stack=3)      ## Adds automatic frame stacking for better observability
     network = NeuralNetwork(env.action_space.n).to(device)
     buffer = ReplayBuffer(int(0.2 * num_frames))
     # buffer = ReplayBuffer(3_000)
 
     dqn = DQN(env, network, buffer, {
-        'lr': 0.00025,
+        'lr': 0.0005,
         'gamma': 0.99,
         'initial_eps': 1.0,
-        'eps_decay': np.exp(np.log(final_eps) / (num_frames * .5)),     ## to decay to final_eps after about 50% of training
+        'eps_decay': np.exp(np.log(final_eps) / (num_frames * .75)),     ## to decay to final_eps after about 50% of training
         # 'eps_decay': 0.995,  
         # 'eps_decay': np.exp(np.log(final_eps) / (num_episodes * 0.5)),     ## to decay to final_eps after about 50% of training
         'final_eps': final_eps,
@@ -201,7 +207,7 @@ if __name__ == "__main__":
         dqn.train(num_frames)
     except KeyboardInterrupt:
         print("Training interrupted. Saving model...")
-        torch.save(dqn.online_model, "./Boxing DQN/breakout_dqn.pth")
+        torch.save(dqn.online_model, "./Atari DQN/boxing_dqn.pth")
 
 
-    torch.save(dqn.online_model, "./Boxing DQN/breakout_dqn.pth")
+    torch.save(dqn.online_model, "./Atari DQN/boxing_dqn.pth")

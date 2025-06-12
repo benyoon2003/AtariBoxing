@@ -72,9 +72,13 @@ class DQN():
             return self.env.action_space.sample()
         else:    ## choose best action
             with torch.no_grad():
-                q_values = self.online_model(obs)
-                max_indices = torch.where(q_values == q_values.max())[0].cpu().numpy()
-                return np.random.choice(max_indices)
+                q_values = self.online_model(obs.unsqueeze(0))
+                q_values = q_values.cpu().numpy().squeeze()  
+                # print(q_values)
+                max_indices = np.where(q_values == q_values.max())[0]
+                action = np.random.choice(max_indices)  ## choose one of the best actions randomly
+                # print(action)
+                return action
 
     def train(self, num_frames):
         reward_buffer = deque(maxlen=10)
@@ -88,6 +92,7 @@ class DQN():
             total_reward = 0
             while not terminated and not truncated:
                 action = self.eps_greedy(torch.tensor(obs, dtype=torch.float32, device=self.device))
+                # print(action)
                 new_obs, reward, terminated, truncated, info = self.env.step(action)  
                 frames += 1
                 total_reward += reward
@@ -163,7 +168,7 @@ if __name__ == "__main__":
     num_frames = 750_000
     # average_steps_per_episode = 150
     
-    env = gym.make("ALE/Pong-v5", obs_type="ram")  ## using RAM observations instead of pixels
+    env = gym.make("ALE/Boxing-v5", obs_type="ram")  ## using RAM observations instead of pixels
     network = NeuralNetwork(128, env.action_space.n).to(device)
     buffer = ReplayBuffer(int(0.1 * num_frames))
     # buffer = ReplayBuffer(10_000)
@@ -181,6 +186,6 @@ if __name__ == "__main__":
     try:
         dqn.train(num_frames)
     except KeyboardInterrupt:
-        torch.save(dqn.online_model, "./Atari DQN/breakout_dqn.pth")
+        torch.save(dqn.online_model, "./Atari DQN/boxing_dqn.pth")
 
-    torch.save(dqn.online_model, "./Atari DQN/breakout_dqn.pth")
+    torch.save(dqn.online_model, "./Atari DQN/boxing_dqn.pth")

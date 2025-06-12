@@ -72,9 +72,13 @@ class DQN():
             return self.env.action_space.sample()
         else:    ## choose best action
             with torch.no_grad():
-                q_values = self.online_model(obs)
-                max_indices = torch.where(q_values == q_values.max())[0].cpu().numpy()
-                return np.random.choice(max_indices)
+                q_values = self.online_model(obs.unsqueeze(0))
+                q_values = q_values.cpu().numpy().squeeze()  
+                # print(q_values)
+                max_indices = np.where(q_values == q_values.max())[0]
+                action = np.random.choice(max_indices)  ## choose one of the best actions randomly
+                # print(action)
+                return action
 
     def train(self, num_episodes):
         reward_buffer = deque(maxlen=50)
