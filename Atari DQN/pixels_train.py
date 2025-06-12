@@ -42,6 +42,10 @@ class ReplayBuffer():
         self.buffer = deque(maxlen=size)
 
     def add(self, obs: np.ndarray, action: int, reward: float, next_obs: np.ndarray, done: bool):
+        obs = np.array(obs, dtype=np.uint8)
+        next_obs = np.array(next_obs, dtype=np.uint8)
+        action = np.uint8(action)
+        reward = np.float16(reward)
         self.buffer.append([obs, action, reward, next_obs, done])
 
     def sample(self, sample_size):
@@ -103,10 +107,10 @@ class DQN():
                 # print(action)
                 new_obs, reward, terminated, truncated, info = self.env.step(action) 
                 frames += 1
-                self.buffer.add(np.array(obs) / 255.0, 
+                self.buffer.add(np.array(obs), 
                                 action, 
                                 reward, 
-                                np.array(new_obs) / 255.0, 
+                                np.array(new_obs), 
                                 terminated or truncated)
                 self.update_step()
 
@@ -137,10 +141,10 @@ class DQN():
         except ValueError:   ## if not enough samples in buffer
             return
         
-        states = torch.stack([torch.tensor(t[0], dtype=torch.float32, device=self.device) for t in trajectories])
+        states = torch.stack([torch.tensor(t[0], dtype=torch.float32, device=self.device) / 255.0 for t in trajectories])
         actions = torch.tensor([t[1] for t in trajectories], device=self.device, dtype=torch.int64)
         rewards = torch.tensor([t[2] for t in trajectories], dtype=torch.float32, device=self.device)
-        next_states = torch.stack([torch.tensor(t[3], dtype=torch.float32, device=self.device) for t in trajectories])
+        next_states = torch.stack([torch.tensor(t[3], dtype=torch.float32, device=self.device) / 255.0 for t in trajectories])
         dones = torch.tensor([t[4] for t in trajectories], dtype=torch.bool, device=self.device)
         
         with torch.no_grad():
@@ -192,7 +196,7 @@ if __name__ == "__main__":
     # num_episodes = 250
     final_eps = 0.1
     # average_steps_per_episode = 1_000
-    num_frames = 500_000
+    num_frames = 2_000_000
     
     env = gym.make("ALE/Boxing-v5", obs_type="grayscale", frameskip=1)
     env = AtariPreprocessing(env)   ## Adds automatic frame skipping and frame preprocessing, as well as 
@@ -201,19 +205,17 @@ if __name__ == "__main__":
     env = FrameStack(env, num_stack=4)      ## Adds automatic frame stacking for better observability
     env = ReducedActionWrapper(env, [0, 1, 2, 3, 4, 5])
     network = NeuralNetwork(4, env.action_space.n).to(device)
-    buffer = ReplayBuffer(int(0.1 * num_frames))
-    # buffer = ReplayBuffer(3_000)
+    # buffer = ReplayBuffer(int(0.1 * num_frames))
+    buffer = ReplayBuffer(50_000)
 
     dqn = DQN(env, network, buffer, {
-        'lr': 0.0001,
+        'lr': 0.0002,
         'gamma': 0.99,
         'initial_eps': 1.0,
         'eps_decay': np.exp(np.log(final_eps) / (num_frames * .1)),     ## to decay to final_eps after about 10% of training
-        # 'eps_decay': 0.995,  
-        # 'eps_decay': np.exp(np.log(final_eps) / (num_episodes * 0.5)),     ## to decay to final_eps after about 50% of training
         'final_eps': final_eps,
         'sample_size': 32,
-        'update_freq': 2  ## how often to update the target network (in terms of episodes)
+        'update_freq': 3  ## how often to update the target network (in terms of episodes)
     }, device)
 
     try:
@@ -227,6 +229,10 @@ if __name__ == "__main__":
         plt.ylabel("Episode Reward")
         plt.title("Episode Rewards During Training")
         plt.show()
+
+        with open("episode_rewards.txt", "w") as f:
+            for item in dqn.all_rewards:
+                f.write(f"{item}\n")      ## save episode rewards to a file
 
 
     plt.figure()
