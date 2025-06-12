@@ -4,10 +4,23 @@ import torch
 # from ram_train import NeuralNetwork
 from pixels_train import NeuralNetwork
 from gym.wrappers import AtariPreprocessing, FrameStack
+from gym import spaces
+
+
+class ReducedActionWrapper(gym.ActionWrapper):
+    def __init__(self, env, allowed_actions):
+        super().__init__(env)
+        self.allowed_actions = allowed_actions
+        self.action_space = spaces.Discrete(len(allowed_actions))
+
+    def action(self, action):
+        return self.allowed_actions[action]
+    
 
 env = gym.make("ALE/Boxing-v5", obs_type="grayscale", frameskip=1)
-# env = AtariPreprocessing(env)
-# env = FrameStack(env, num_stack=3)
+env = AtariPreprocessing(env)
+env = FrameStack(env, num_stack=4)
+env = ReducedActionWrapper(env, [0, 1, 2, 3, 4, 5])
 
 # env = gym.make("ALE/Boxing-v5", obs_type="ram", render_mode='human')
 
@@ -21,14 +34,14 @@ device = (
 )
 print(f"Using {device} device")
 
-# model = torch.load("./Atari DQN/space_invaders_dqn.pth").to(device)
+model = torch.load("./Atari DQN/boxing_dqn.pth").to(device)
 # model = torch.load("dqn_model_v2.pth").to(device)
-# model.eval()
+model.eval()
 
 obs, info = env.reset()
 all_rewards = []
 all_steps = []
-for _ in range(100):
+for _ in range(3):
     obs, info = env.reset()
     terminated = False
     truncated = False
@@ -37,12 +50,12 @@ for _ in range(100):
     obs, reward, terminated, truncated, info = env.step(1)
     while not terminated and not truncated:
         with torch.no_grad():
-            # q_values = model(torch.tensor(np.array(obs), dtype=torch.float32, device=device).unsqueeze(0))
-            # q_values = q_values.cpu().numpy().squeeze()
-            # # print(q_values)
-            # max_indices = np.where(q_values == q_values.max())[0]
-            # # print(max_indices)
-            # action = np.random.choice(max_indices)
+            q_values = model(torch.tensor(np.array(obs), dtype=torch.float32, device=device).unsqueeze(0))
+            q_values = q_values.cpu().numpy().squeeze()
+            # print(q_values)
+            max_indices = np.where(q_values == q_values.max())[0]
+            # print(max_indices)
+            action = np.random.choice(max_indices)
             action = env.action_space.sample()
         obs, reward, terminated, truncated, info = env.step(action)
         # print(action)

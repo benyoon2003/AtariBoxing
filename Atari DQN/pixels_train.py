@@ -6,6 +6,8 @@ from collections import deque
 import random
 from copy import deepcopy
 from gym.wrappers import AtariPreprocessing, FrameStack
+from gym import spaces
+import matplotlib.pyplot as plt
 
 ## might need to run these commands first
 
@@ -14,17 +16,17 @@ from gym.wrappers import AtariPreprocessing, FrameStack
 
 
 class NeuralNetwork(nn.Module):
-    def __init__(self, output_dim):
+    def __init__(self, input_dim, output_dim):
         super().__init__()
         self.network = nn.Sequential(
-            nn.Conv2d(3, 16, kernel_size=8, stride=4),
+            nn.Conv2d(input_dim, 8, kernel_size=8, stride=4),
             nn.ReLU(),
-            nn.Conv2d(16, 32, kernel_size=4, stride=2),
+            nn.Conv2d(8, 16, kernel_size=4, stride=2),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(32 * 9 * 9, 256),
+            nn.Linear(16 * 9 * 9, 128),
             nn.ReLU(),
-            nn.Linear(256, output_dim)
+            nn.Linear(128, output_dim)
         )
 
     def forward(self, x: torch.Tensor):
@@ -63,12 +65,15 @@ class DQN():
         self.sample_size = hyperparams['sample_size']
         self.eps = self.initial_eps
         self.buffer = buffer
-        self.loss_fn = nn.MSELoss()
-        self.optimizer = torch.optim.RMSprop(self.online_model.parameters(), lr=self.lr)
+        self.loss_fn = nn.SmoothL1Loss()
+        self.optimizer = torch.optim.Adam(self.online_model.parameters(), lr=self.lr)
         self.update_freq = hyperparams['update_freq']
+        self.all_rewards = []
+
 
     def eps_greedy(self, obs: torch.Tensor):
-        '''Selects an action according to the last 4 observations using epsilon-greedy.'''
+        '''Selects an action according to the last 2 observations using epsilon-greedy.'''
+
 
         rand = np.random.rand()
         if rand < self.eps:     ## choose random action
@@ -76,10 +81,8 @@ class DQN():
         else:    ## choose best action
             with torch.no_grad():
                 q_values = self.online_model(obs.unsqueeze(0))
-                q_values = q_values.cpu().numpy().squeeze()  
+                action = torch.argmax(q_values).item()
                 # print(q_values)
-                max_indices = np.where(q_values == q_values.max())[0]
-                action = np.random.choice(max_indices)  ## choose one of the best actions randomly
                 # print(action)
                 return action
 
@@ -97,6 +100,7 @@ class DQN():
             total_reward = 0
             while not terminated and not truncated:
                 action = self.eps_greedy(torch.tensor(np.array(obs), dtype=torch.float32, device=self.device) / 255.0)
+                # print(action)
                 new_obs, reward, terminated, truncated, info = self.env.step(action) 
                 frames += 1
                 self.buffer.add(np.array(obs) / 255.0, 
@@ -109,11 +113,13 @@ class DQN():
                 total_reward += reward
                 self.eps = max(self.eps * self.eps_decay, self.final_eps)
                 obs = new_obs
-            
+
+            self.all_rewards.append(total_reward)
             reward_buffer.append(total_reward)
 
             if episodes % self.update_freq == 0:
                 self.target_model.load_state_dict(self.online_model.state_dict())
+                print("Target model updated")
 
             if episodes % 10 == 0:
                 print(f"Episode {episodes} -- Reward Over Last 10 episodes: {np.mean(reward_buffer)}")
@@ -123,7 +129,7 @@ class DQN():
     def update_step(self):
         '''Uses data from replay buffer to update the model.'''
 
-        if len(self.buffer.buffer) < 10_000:
+        if len(self.buffer.buffer) < 5_000:
             return
 
         try:   
@@ -138,11 +144,9 @@ class DQN():
         dones = torch.tensor([t[4] for t in trajectories], dtype=torch.bool, device=self.device)
         
         with torch.no_grad():
-            next_q_values_online = self.online_model(next_states)  ## get q values for next states from online model
-            best_actions = torch.argmax(next_q_values_online, dim=1)  ## get best actions for next states
-            next_q_values_target = self.target_model(next_states)
-            max_q_values_target = next_q_values_target[range(self.sample_size), best_actions]  ## get q values for best actions from target model
-            targets = rewards + (1 - dones.float()) * self.gamma * max_q_values_target
+            next_q_values = self.target_model(next_states)
+            max_next_q_values = next_q_values.max(dim=1)[0]
+            targets = rewards + (1 - dones.float()) * self.gamma * max_next_q_values
 
         # print(states.shape)
         # print(states)
@@ -161,6 +165,14 @@ class DQN():
 
         # torch.cuda.empty_cache()  ## clear cache to avoid memory issues, especially on GPU
     
+class ReducedActionWrapper(gym.ActionWrapper):
+    def __init__(self, env, allowed_actions):
+        super().__init__(env)
+        self.allowed_actions = allowed_actions
+        self.action_space = spaces.Discrete(len(allowed_actions))
+
+    def action(self, action):
+        return self.allowed_actions[action]
                 
 
 if __name__ == "__main__":
@@ -180,27 +192,28 @@ if __name__ == "__main__":
     # num_episodes = 250
     final_eps = 0.1
     # average_steps_per_episode = 1_000
-    num_frames = 1_000_000
+    num_frames = 500_000
     
     env = gym.make("ALE/Boxing-v5", obs_type="grayscale", frameskip=1)
     env = AtariPreprocessing(env)   ## Adds automatic frame skipping and frame preprocessing, as well as 
                                     ## starting the environment stochastically by choosing to do nothing
                                     ## for a random number of frames at start
-    env = FrameStack(env, num_stack=3)      ## Adds automatic frame stacking for better observability
-    network = NeuralNetwork(env.action_space.n).to(device)
-    buffer = ReplayBuffer(int(0.2 * num_frames))
+    env = FrameStack(env, num_stack=4)      ## Adds automatic frame stacking for better observability
+    env = ReducedActionWrapper(env, [0, 1, 2, 3, 4, 5])
+    network = NeuralNetwork(4, env.action_space.n).to(device)
+    buffer = ReplayBuffer(int(0.1 * num_frames))
     # buffer = ReplayBuffer(3_000)
 
     dqn = DQN(env, network, buffer, {
-        'lr': 0.0005,
+        'lr': 0.0001,
         'gamma': 0.99,
         'initial_eps': 1.0,
-        'eps_decay': np.exp(np.log(final_eps) / (num_frames * .75)),     ## to decay to final_eps after about 50% of training
+        'eps_decay': np.exp(np.log(final_eps) / (num_frames * .1)),     ## to decay to final_eps after about 10% of training
         # 'eps_decay': 0.995,  
         # 'eps_decay': np.exp(np.log(final_eps) / (num_episodes * 0.5)),     ## to decay to final_eps after about 50% of training
         'final_eps': final_eps,
         'sample_size': 32,
-        'update_freq': 5  ## how often to update the target network (in terms of episodes)
+        'update_freq': 2  ## how often to update the target network (in terms of episodes)
     }, device)
 
     try:
@@ -208,6 +221,18 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("Training interrupted. Saving model...")
         torch.save(dqn.online_model, "./Atari DQN/boxing_dqn.pth")
+        plt.figure()
+        plt.plot(dqn.all_rewards)
+        plt.xlabel("Episode")
+        plt.ylabel("Episode Reward")
+        plt.title("Episode Rewards During Training")
+        plt.show()
 
 
+    plt.figure()
+    plt.plot(dqn.all_rewards)
+    plt.xlabel("Episode")
+    plt.ylabel("Episode Reward")
+    plt.title("Episode Rewards During Training")
+    plt.show()
     torch.save(dqn.online_model, "./Atari DQN/boxing_dqn.pth")

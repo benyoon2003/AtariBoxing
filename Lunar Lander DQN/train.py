@@ -59,8 +59,8 @@ class DQN():
         self.sample_size = hyperparams['sample_size']
         self.eps = self.initial_eps
         self.buffer = buffer
-        self.loss_fn = nn.MSELoss()
-        self.optimizer = torch.optim.RMSprop(self.online_model.parameters(), lr=self.lr)
+        self.loss_fn = nn.SmoothL1Loss()
+        self.optimizer = torch.optim.Adam(self.online_model.parameters(), lr=self.lr)
         self.update_freq = hyperparams['update_freq']
 
     def eps_greedy(self, obs: torch.Tensor):
@@ -120,11 +120,9 @@ class DQN():
         dones = torch.tensor([t[4] for t in trajectories], dtype=torch.bool, device=self.device)
         
         with torch.no_grad():
-            next_q_values_online = self.online_model(next_states)  ## get q values for next states from online model
-            best_actions = torch.argmax(next_q_values_online, dim=1)  ## get best actions for next states
-            next_q_values_target = self.target_model(next_states)
-            max_q_values_target = next_q_values_target[range(self.sample_size), best_actions]  ## get q values for best actions from target model
-            targets = rewards + (1 - dones.float()) * self.gamma * max_q_values_target
+            next_q_values = self.target_model(next_states)
+            max_next_q_values = next_q_values.max(dim=1)[0]
+            targets = rewards + (1 - dones.float()) * self.gamma * max_next_q_values
 
         # print(states.shape)
         # print(states)
@@ -179,4 +177,4 @@ if __name__ == "__main__":
     dqn.train(num_episodes)
 
 
-    torch.save(dqn.model, "./DQN/dqn_model.pth")
+    torch.save(dqn.model, "./Lunar Lander DQN/dqn_model.pth")
