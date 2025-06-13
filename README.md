@@ -9,7 +9,7 @@ pip install -r requirements.txt
 
 # DQN Boxing Agent
 To train your agent:
-python boxing.py --train
+python dqn.py --train
 
 Optional Params:
               --batch_size
@@ -26,7 +26,7 @@ bash fine_tune.sh
 logs diretory will show the trained models as well as their average rewards over however many episodes
 
 To visualize your agent playing the game:
-python boxing.py --eval
+python dqn.py --eval
 
 Optional Params:
               --episodes
