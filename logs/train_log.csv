@@ -34,3 +34,13 @@ models/dqn_bs16_lr0.00001_gamma0.99_eps1.0_decay0.99_ep100.pth,-1.17
 models/dqn_bs16_lr0.00001_gamma0.99_eps1.0_decay0.995_ep100.pth,1.56
 models/dqn_bs16_lr0.00001_gamma0.995_eps1.0_decay0.99_ep100.pth,-0.72
 models/dqn_bs16_lr0.00001_gamma0.995_eps1.0_decay0.995_ep100.pth,-0.1
+models/GA/ga_ps1_g1_ef0.2_mr0.1_ms0.02_epe3.pth,-29.333333333333332
+models/DQN/BENCHMARK_dqn_bs16_lr0.0001_gamma0.98_eps1.0_decay0.99_ep150.pth,2.0866666666666664
+models/DQN/BENCHMARK_dqn_bs16_lr0.0001_gamma0.98_eps1.0_decay0.99_ep250.pth,2.588
+models/DQN/BENCHMARK_dqn_bs16_lr0.0001_gamma0.98_eps1.0_decay0.99_ep350.pth,2.9771428571428573
+models/DQN/BENCHMARK_dqn_bs16_lr0.0001_gamma0.98_eps1.0_decay0.99_ep500.pth,4.84
+models/GA/ga_ps20_g10_ef0.2_mr0.1_ms0.02_epe3.pth,-29.3
+models/GA/ga_ps20_g30_ef0.2_mr0.1_ms0.02_epe3.pth,-29.42444444444444
+models/GA/ga_ps20_g50_ef0.2_mr0.1_ms0.02_epe3.pth,-25.72000000000001
+models/GA/ga_ps40_g10_ef0.2_mr0.1_ms0.02_epe3.pth,-30.005000000000003
+models/GA/ga_ps40_g30_ef0.2_mr0.1_ms0.02_epe3.pth,-26.379166666666666
