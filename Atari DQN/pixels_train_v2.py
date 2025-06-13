@@ -212,7 +212,7 @@ if __name__ == "__main__":
                                     ## starting the environment stochastically by choosing to do nothing
                                     ## for a random number of frames at start
     env = FrameStack(env, num_stack=4)      ## Adds automatic frame stacking for better observability
-    env = ReducedActionWrapper(env, [0, 1, 2, 3, 4, 5])
+    # env = ReducedActionWrapper(env, [0, 1, 2, 3, 4, 5])
     network = NeuralNetwork(4, env.action_space.n).to(device)
     # buffer = ReplayBuffer(int(0.1 * num_frames))
     buffer = ReplayBuffer(50_000)
