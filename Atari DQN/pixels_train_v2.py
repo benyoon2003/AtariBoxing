@@ -1,3 +1,4 @@
+import argparse
 import torch
 from torch import nn
 import gym
@@ -56,7 +57,7 @@ class ReplayBuffer():
 
 
 class DQN():
-    def __init__(self, env: gym.Env, qnetwork: NeuralNetwork, buffer: ReplayBuffer, hyperparams: dict, device):
+    def __init__(self, env: gym.Env, qnetwork: NeuralNetwork, buffer: ReplayBuffer, hyperparams: dict, device, rewards_path: str):
         self.device = device
         self.env = env
         self.online_model = qnetwork.to(self.device)  ## network for learning q values and selecting actions
@@ -73,6 +74,7 @@ class DQN():
         self.optimizer = torch.optim.Adam(self.online_model.parameters(), lr=self.lr)
         self.update_freq = hyperparams['update_freq']
         self.all_rewards = []
+        self.rewards_path = rewards_path
 
 
     def eps_greedy(self, obs: torch.Tensor):
@@ -94,7 +96,7 @@ class DQN():
         reward_buffer = deque(maxlen=10)  ## buffer for keeping track of rewards over last 10 episodes
         frames = 0
         episodes = 0
-        with open("rewards_log.csv", mode="w", newline="") as file: # creat a csv file for storage the reward
+        with open(self.rewards_path, mode="w", newline="") as file: # creat a csv file for storage the reward
             writer = csv.writer(file)
             writer.writerow(["episode", "total_reward"])
         
@@ -138,7 +140,7 @@ class DQN():
     def update_step(self):
         '''Uses data from replay buffer to update the model.'''
 
-        if len(self.buffer.buffer) < 5_000:
+        if len(self.buffer.buffer) < 1_000:
             return
 
         try:   
@@ -157,8 +159,6 @@ class DQN():
             max_next_q_values = next_q_values.max(dim=1)[0]
             targets = rewards + (1 - dones.float()) * self.gamma * max_next_q_values
 
-        # print(states.shape)
-        # print(states)
         pred = self.online_model(states)
         target = pred.clone().detach()    ## change predictions only at index of action taken, otherwise 
                                                                   ## stay the same as predictions
@@ -172,7 +172,6 @@ class DQN():
         loss.backward()
         self.optimizer.step()
 
-        # torch.cuda.empty_cache()  ## clear cache to avoid memory issues, especially on GPU
     
 class ReducedActionWrapper(gym.ActionWrapper):
     def __init__(self, env, allowed_actions):
@@ -185,6 +184,17 @@ class ReducedActionWrapper(gym.ActionWrapper):
                 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor")
+    parser.add_argument("--decay_percentage", type=float, default=0.1, help="Epsilon decay")
+    parser.add_argument("--LR", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument("--model_path", type=str, default="models/dqn.pth", help="Model path")
+    parser.add_argument("--rewards_path", type=str, default="rewards/dqn.csv", help="rewards record path")
+
+    args = parser.parse_args()
+
+
+    
     device = (
     "cuda"
     if torch.cuda.is_available()
@@ -194,14 +204,8 @@ if __name__ == "__main__":
     )
     print(f"Using {device} device")
 
-    # print("Torch version:", torch.__version__)
-    # print("CUDA available:", torch.cuda.is_available())
-    # print("GPU name:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "No GPU")
-
-    # num_episodes = 250
     final_eps = 0.1
-    # average_steps_per_episode = 1_000
-    num_frames = 2_000_000
+    num_frames = 1_000_000
     
     env = gym.make("ALE/Boxing-v5", obs_type="grayscale", frameskip=1)
     env = AtariPreprocessing(env)   ## Adds automatic frame skipping and frame preprocessing, as well as 
@@ -214,36 +218,19 @@ if __name__ == "__main__":
     buffer = ReplayBuffer(50_000)
 
     dqn = DQN(env, network, buffer, {
-        'lr': float(input("What's lr value (e.g. 0.0005): ")),
-        'gamma': float(input("What's gamma value (e.g. 0.99): ")),
-        'initial_eps': float(input("What's initial_eps value (e.g. 1.0): ")),
-        'eps_decay': np.exp(np.log(final_eps) / (num_frames * .1)),     ## to decay to final_eps after about 10% of training 
-        'final_eps': float(input("What's final_eps value (e.g. 0.1): ")),
-        'sample_size': int(input("What's sample_size value (e.g. 32): ")),
-        'update_freq': int(input("What's update_freq value (e.g. 10): ")) ## how often to update the target network (in terms of episodes)
-    }, device)
+        'lr': args.LR,
+        'gamma': args.gamma,
+        'initial_eps': 1.0,
+        'eps_decay': np.exp(np.log(final_eps) / (num_frames * args.decay_percentage)),     ## to decay to final_eps after about 10% of training 
+        'final_eps': 0.1,
+        'sample_size': 32,
+        'update_freq': 1 ## how often to update the target network (in terms of episodes)
+    }, device, args.rewards_path)
   
     try:
         dqn.train(num_frames)
-    except KeyboardInterrupt:
+    except KeyboardInterrupt:   ## allows for automatic saving when training is interrupted
         print("Training interrupted. Saving model...")
-        torch.save(dqn.online_model, "./Atari DQN/boxing_dqn.pth")
-        plt.figure()
-        plt.plot(dqn.all_rewards)
-        plt.xlabel("Episode")
-        plt.ylabel("Episode Reward")
-        plt.title("Episode Rewards During Training")
-        plt.show()
+        torch.save(dqn.online_model, args.model_path)
 
-        with open("episode_rewards.txt", "w") as f:
-            for item in dqn.all_rewards:
-                f.write(f"{item}\n")      ## save episode rewards to a file
-
-
-    plt.figure()
-    plt.plot(dqn.all_rewards)
-    plt.xlabel("Episode")
-    plt.ylabel("Episode Reward")
-    plt.title("Episode Rewards During Training")
-    plt.show()
-    torch.save(dqn.online_model, "./Atari DQN/boxing_dqn.pth")
+    torch.save(dqn.online_model, args.model_path)
