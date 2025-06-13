@@ -177,7 +177,7 @@ class ReducedActionWrapper(gym.ActionWrapper):
 
     def action(self, action):
         return self.allowed_actions[action]
-                
+
 
 if __name__ == "__main__":
     device = (
@@ -189,14 +189,8 @@ if __name__ == "__main__":
     )
     print(f"Using {device} device")
 
-    # print("Torch version:", torch.__version__)
-    # print("CUDA available:", torch.cuda.is_available())
-    # print("GPU name:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "No GPU")
-
-    # num_episodes = 250
     final_eps = 0.1
-    # average_steps_per_episode = 1_000
-    num_frames = 2_000_000
+    num_frames = 1_000_000
     
     env = gym.make("ALE/Boxing-v5", obs_type="grayscale", frameskip=1)
     env = AtariPreprocessing(env)   ## Adds automatic frame skipping and frame preprocessing, as well as 
@@ -205,17 +199,17 @@ if __name__ == "__main__":
     env = FrameStack(env, num_stack=4)      ## Adds automatic frame stacking for better observability
     env = ReducedActionWrapper(env, [0, 1, 2, 3, 4, 5])
     network = NeuralNetwork(4, env.action_space.n).to(device)
-    # buffer = ReplayBuffer(int(0.1 * num_frames))
     buffer = ReplayBuffer(50_000)
 
+
     dqn = DQN(env, network, buffer, {
-        'lr': 0.0002,
+        'lr': 0.0001,
         'gamma': 0.99,
         'initial_eps': 1.0,
         'eps_decay': np.exp(np.log(final_eps) / (num_frames * .1)),     ## to decay to final_eps after about 10% of training
         'final_eps': final_eps,
         'sample_size': 32,
-        'update_freq': 3  ## how often to update the target network (in terms of episodes)
+        'update_freq': 1  ## how often to update the target network (in terms of episodes)
     }, device)
 
     try:
