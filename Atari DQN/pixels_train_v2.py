@@ -20,14 +20,14 @@ class NeuralNetwork(nn.Module):
     def __init__(self, input_dim, output_dim):
         super().__init__()
         self.network = nn.Sequential(
-            nn.Conv2d(input_dim, 8, kernel_size=8, stride=4),
+            nn.Conv2d(input_dim, 16, kernel_size=8, stride=4),
             nn.ReLU(),
-            nn.Conv2d(8, 16, kernel_size=4, stride=2),
+            nn.Conv2d(16, 32, kernel_size=4, stride=2),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(16 * 9 * 9, 128),
+            nn.Linear(32 * 9 * 9, 256),
             nn.ReLU(),
-            nn.Linear(128, output_dim)
+            nn.Linear(256, output_dim)
         )
 
     def forward(self, x: torch.Tensor):
@@ -130,7 +130,7 @@ class DQN():
 
                 if episodes % self.update_freq == 0:
                     self.target_model.load_state_dict(self.online_model.state_dict())
-                    print("Target model updated")
+                    # print("Target model updated")
 
                 if episodes % 10 == 0:
                     print(f"Episode {episodes} -- Reward Over Last 10 episodes: {np.mean(reward_buffer)}")
