@@ -70,7 +70,7 @@ class DQN():
         self.sample_size = hyperparams['sample_size']
         self.eps = self.initial_eps
         self.buffer = buffer
-        self.loss_fn = nn.SmoothL1Loss()
+        self.loss_fn = nn.MSELoss()
         self.optimizer = torch.optim.Adam(self.online_model.parameters(), lr=self.lr)
         self.update_freq = hyperparams['update_freq']
         self.all_rewards = []
@@ -204,7 +204,7 @@ if __name__ == "__main__":
     )
     print(f"Using {device} device")
 
-    final_eps = 0.1
+    final_eps = 0.05
     num_frames = 1_000_000
     
     env = gym.make("ALE/Boxing-v5", obs_type="grayscale", frameskip=1)
@@ -222,7 +222,7 @@ if __name__ == "__main__":
         'gamma': args.gamma,
         'initial_eps': 1.0,
         'eps_decay': np.exp(np.log(final_eps) / (num_frames * args.decay_percentage)),     ## to decay to final_eps after about 10% of training 
-        'final_eps': 0.1,
+        'final_eps': final_eps,
         'sample_size': 32,
         'update_freq': 1 ## how often to update the target network (in terms of episodes)
     }, device, args.rewards_path)
