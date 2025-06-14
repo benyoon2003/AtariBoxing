@@ -19,3 +19,8 @@ plt.ylabel("Total Reward")
 plt.grid(True)
 plt.tight_layout()
 plt.show()
+
+second_column = df.iloc[:, 1]
+average_value = second_column.mean()
+
+print("Average Rewards:", average_value)
