@@ -55,10 +55,11 @@ def stack_frames(frames, state, is_new_episode):
 
 
 # Fitness of the policy is determined based on average total reward per episode
-def evaluate_policy(policy, n_episodes=1, render=False, print_reward=False):
+def evaluate_policy(policy, n_episodes=1, render=False, print_reward=False, model_path=None):
     policy.eval()
     env_local = gym.make(ENV_NAME, render_mode="human" if render else None)
     total_reward = 0.0
+    csv_rewards = []
 
     # Iterate through episodes
     for _ in range(n_episodes):
@@ -66,6 +67,7 @@ def evaluate_policy(policy, n_episodes=1, render=False, print_reward=False):
         obs, _ = env_local.reset()
         frames, state = stack_frames(frames, obs, True) # Grab stacked frames for current state
         done = False
+        reward_per_episode = 0
         while not done:
             state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
 
@@ -77,12 +79,19 @@ def evaluate_policy(policy, n_episodes=1, render=False, print_reward=False):
             done = terminated or truncated
             frames, state = stack_frames(frames, next_obs, False) # Grab next state
             total_reward += reward # Collect reward
+            reward_per_episode += reward
             if (render):
                 env_local.render()
+        csv_rewards.append(reward_per_episode)
 
     avg_reward = total_reward / n_episodes
     if print_reward:
         print(f"Average reward per episode {avg_reward}")
+        os.makedirs("logs", exist_ok=True)
+        with open(f"logs/{model_path[10:-3]}_Eval.csv", "a") as log_file:
+            for index, item in enumerate(csv_rewards):
+                log_file.write(f"{index},{item}\n")
+
     return avg_reward
 
 # Select policy based on fitness score
@@ -223,7 +232,8 @@ def main():
         )
     elif args.eval:
         loaded_policy = load_policy(args.model_path, env.action_space.n)
-        evaluate_policy(loaded_policy, n_episodes=args.episodes_per_eval, render=args.render, print_reward=True)
+        evaluate_policy(loaded_policy, n_episodes=args.episodes_per_eval, 
+        render=args.render, print_reward=True, model_path=args.model_path)
     else:
         print("Specify either --train or --eval.")
 
