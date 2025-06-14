@@ -27,6 +27,12 @@ def convertActions(act_dir):
     # because the .DS_Store file exists for some reason - i have no idea what it is but if it stops existing this should still throw the exception
     if len(os.listdir(path)) < 1: 
         raise Exception("No files found in " + path + " directory when loading actions!")
+    
+    if len(os.listdir(path)) == 1:
+        for file in os.listdir(path):
+            filename = os.fsdecode(file)
+            if filename == ".DS_Store":
+                raise Exception("No files found in " + path + "directory(excluding .DS_Store file!)")
 
     for file in os.listdir(path):
         filename = os.fsdecode(file)
@@ -93,15 +99,14 @@ class CustomDataset(Dataset):
             action = self.target_transform(action)
 
         return observation, action
-
     
 dataset = CustomDataset('actions', 'observations')
 
 #hyperparams
 
-learning_rate = 1e-3
-batch_size = 32
-epochs = 10
+learning_rate = 3e-3
+batch_size = 64
+epochs = 60
 
 
 train_data, test_data = torch.utils.data.random_split(dataset, [0.8, 0.2])
@@ -144,15 +149,16 @@ class NeuralNetwork(nn.Module):
             nn.Flatten(),
             nn.Linear(flattened_size, 512),
             nn.ReLU(),
-            nn.Linear(512, 18)  # Replace 18 with actual number of actions
+            nn.Linear(512, 100),  # Replace 18 with actual number of actions
+            nn.ReLU(),
+            nn.Linear(100, 18)  # Replace 18 with actual number of actions
         )
 
     def forward(self, x):
         x = self.conv_stack(x)
         x = self.fc_stack(x)
         return x
-
-
+    
 
 model = NeuralNetwork()
 
@@ -165,12 +171,7 @@ def train_loop(dataloader, model, loss_fn, optimizer):
     for batch, (X, y) in enumerate(dataloader):
         #pred/loss calculation
 
-        print(y.dtype)
-
         # X = X.to(torch.double)
-
-        print(X.dtype)
-
         pred = model(X)
         loss = loss_fn(pred, y)
 
@@ -198,6 +199,7 @@ def test_loop(dataloader, model, loss_fn):
 
     # Evaluating the model with torch.no_grad() ensures that no gradients are computed during test mode
     # also serves to reduce unnecessary gradient computations and memory usage for tensors with requires_grad=True
+
     with torch.no_grad():
         for X, y in dataloader:
             pred = model(X)
@@ -207,18 +209,71 @@ def test_loop(dataloader, model, loss_fn):
 
     test_loss /= num_batches
     correct /= size
+
+    with open("loss_data", "a") as f:
+        f.write(str(test_loss) + ", ")
+
     print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
+
+# Want to visualize the model actually working
+def evaluate(model_path = "behavioral_cloning.pt", episodes=1):
+    env = gym.make("ALE/Boxing-v5", render_mode="human")
+    policy_net = NeuralNetwork().to(device)
+    if os.path.exists(model_path):
+        policy_net.load_state_dict(torch.load(model_path, map_location=device))
+        policy_net.eval()
+        watch_agent(policy_net, env, episodes)
+    else:
+        print("No trained model found.")
+    env.close()
+
+def select_action(state, policy_net, action_size, epsilon):
+    if random.random() < epsilon:
+        return random.randrange(action_size) # do a random action
+    else:
+        state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device) # convert state to float tensor, batch dimension for GPU
+        with torch.no_grad(): 
+            state_tensor = state_tensor.permute(3, 0, 1, 2)
+            q_values = policy_net(state_tensor) # get q values for each action
+        # im not entirely sure why but this is required to get it to run
+        q_argmax = -1
+        for i in range(0, 3):
+            if q_values[i].argmax().item() > q_argmax:
+                q_argmax = q_values[i].argmax().item()
+        return q_argmax # Get index with max q value and convert it into int
+
+def watch_agent(policy_net, env, episodes=1):
+    for episode in range(episodes):
+        state, _ = env.reset()
+        frames = deque(maxlen=4)
+        total_reward = 0
+        done = False
+        while not done:
+            env.render()
+            action = select_action(state, policy_net, env.action_space.n, 0.0)
+            next_state, reward, terminated, truncated, _ = env.step(action)
+            done = terminated or truncated
+            total_reward += reward
+        print(f"Evaluation Episode {episode}, Total Reward: {total_reward}")
+
 
 
 loss_fn = nn.CrossEntropyLoss()
 
-optimizer = torch.optim.SGD(model.parameters(), lr= learning_rate)
+
+optimizer = torch.optim.ASGD(model.parameters(), lr= learning_rate)
 
 for t in range(epochs):
     print("Epoch:", t)
     train_loop(train_dataloader, model, loss_fn, optimizer)
     test_loop(test_dataloader, model, loss_fn)
 print("Done")
+with open("loss_data", "a") as f:
+    f.write("|||")
+
+# print(model.state_dict())
+torch.save(model.state_dict(), "behavioral_cloning.pt")
+evaluate()
 
 # actions = convertActions('actions')
 # print(actions)
