@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Background
 This project investigates the performance of various artificial intelligence training paradigms—Deep Q-Networks (DQN), Genetic Algorithms (GA), and Behavioral Cloning—within the Atari Boxing environment. The goal is to explore the dichotomy between "nature" (evolutionary methods) and "nurture" (learning from data or experience) in shaping AI behavior. DQN, leveraging reinforcement learning and convolutional neural networks, achieved the highest performance, consistently defeating the in-game opponent with significant margins. GA, simulating evolutionary processes through population-based optimization, showed moderate success but was constrained by computational costs and premature convergence. Behavioral Cloning, which imitates human gameplay through supervised learning, struggled due to limited training data and error propagation from human mistakes. Our analysis suggests that learning-based methods such as DQN are currently more effective in this environment, though evolutionary approaches may improve with better resource allocation and algorithmic diversity. Future work includes expanding to more complex gaming environments and enhancing generalization capabilities across agents.
 
@@ -50,3 +51,20 @@ Running an evaluation command in the above format generates a csv file under the
 
 
 
+=======
+# Setup
+You will need to set up a conda environment first:
+
+conda create -n boxing-dqn python=3.11
+
+conda activate boxing-dqn
+
+pip install -r requirements.txt
+
+# DQN Boxing Agent
+To train your agent:
+python boxing.py --train
+
+To visualize your agent playing the game:
+python boxing.py --eval
+>>>>>>> DQNv2
