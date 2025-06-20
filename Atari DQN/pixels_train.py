@@ -1,3 +1,4 @@
+import argparse
 import torch
 from torch import nn
 import gym
@@ -8,7 +9,7 @@ from copy import deepcopy
 from gym.wrappers import AtariPreprocessing, FrameStack
 from gym import spaces
 import matplotlib.pyplot as plt
-
+import csv
 ## might need to run these commands first
 
 # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
@@ -16,17 +17,19 @@ import matplotlib.pyplot as plt
 
 
 class NeuralNetwork(nn.Module):
+    '''A convolutional neural network representing the q-value function for DQN.'''
+
     def __init__(self, input_dim, output_dim):
         super().__init__()
         self.network = nn.Sequential(
-            nn.Conv2d(input_dim, 8, kernel_size=8, stride=4),
+            nn.Conv2d(input_dim, 16, kernel_size=8, stride=4),
             nn.ReLU(),
-            nn.Conv2d(8, 16, kernel_size=4, stride=2),
+            nn.Conv2d(16, 32, kernel_size=4, stride=2),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(16 * 9 * 9, 128),
+            nn.Linear(32 * 9 * 9, 256),
             nn.ReLU(),
-            nn.Linear(128, output_dim)
+            nn.Linear(256, output_dim)
         )
 
     def forward(self, x: torch.Tensor):
@@ -56,7 +59,7 @@ class ReplayBuffer():
 
 
 class DQN():
-    def __init__(self, env: gym.Env, qnetwork: NeuralNetwork, buffer: ReplayBuffer, hyperparams: dict, device):
+    def __init__(self, env: gym.Env, qnetwork: NeuralNetwork, buffer: ReplayBuffer, hyperparams: dict, device: str, rewards_path: str):
         self.device = device
         self.env = env
         self.online_model = qnetwork.to(self.device)  ## network for learning q values and selecting actions
@@ -69,14 +72,15 @@ class DQN():
         self.sample_size = hyperparams['sample_size']
         self.eps = self.initial_eps
         self.buffer = buffer
-        self.loss_fn = nn.SmoothL1Loss()
+        self.loss_fn = nn.MSELoss()
         self.optimizer = torch.optim.Adam(self.online_model.parameters(), lr=self.lr)
         self.update_freq = hyperparams['update_freq']
         self.all_rewards = []
+        self.rewards_path = rewards_path
 
 
     def eps_greedy(self, obs: torch.Tensor):
-        '''Selects an action according to the last 2 observations using epsilon-greedy.'''
+        '''Selects an action according to the last 4 observations using epsilon-greedy.'''
 
 
         rand = np.random.rand()
@@ -91,49 +95,52 @@ class DQN():
                 return action
 
     def train(self, num_frames: int):
-        reward_buffer = deque(maxlen=10)  ## buffer for keeping track of rewards over last 10 episodes
+        reward_buffer = deque(maxlen=10)  ## buffer for keeping track of rewards over last 10 episodes, used for monitoring training rewards
         frames = 0
         episodes = 0
+        with open(self.rewards_path, mode="w", newline="") as file: # create a csv file for storing the reward
+            writer = csv.writer(file)
+            writer.writerow(["episode", "total_reward"])
+        
+            while frames < num_frames:
+                episodes += 1
+                obs, info = self.env.reset()   ## get first observation
 
-        while frames < num_frames:
-            episodes += 1
-            obs, info = self.env.reset()   ## get first observation
+                terminated = False
+                truncated = False
+                total_reward = 0
+                while not terminated and not truncated:
+                    action = self.eps_greedy(torch.tensor(np.array(obs), dtype=torch.float32, device=self.device) / 255.0)
+                    new_obs, reward, terminated, truncated, info = self.env.step(action) 
+                    frames += 1
+                    self.buffer.add(np.array(obs), 
+                                    action, 
+                                    reward, 
+                                    np.array(new_obs), 
+                                    terminated or truncated)
+                    self.update_step()
 
-            terminated = False
-            truncated = False
-            total_reward = 0
-            while not terminated and not truncated:
-                action = self.eps_greedy(torch.tensor(np.array(obs), dtype=torch.float32, device=self.device) / 255.0)
-                # print(action)
-                new_obs, reward, terminated, truncated, info = self.env.step(action) 
-                frames += 1
-                self.buffer.add(np.array(obs), 
-                                action, 
-                                reward, 
-                                np.array(new_obs), 
-                                terminated or truncated)
-                self.update_step()
+                    total_reward += reward
+                    self.eps = max(self.eps * self.eps_decay, self.final_eps)
+                    obs = new_obs
 
-                total_reward += reward
-                self.eps = max(self.eps * self.eps_decay, self.final_eps)
-                obs = new_obs
+                self.all_rewards.append(total_reward)
 
-            self.all_rewards.append(total_reward)
-            reward_buffer.append(total_reward)
+                reward_buffer.append(total_reward)
+                writer.writerow([episodes, total_reward]) # save the reward
 
-            if episodes % self.update_freq == 0:
-                self.target_model.load_state_dict(self.online_model.state_dict())
-                print("Target model updated")
+                if episodes % self.update_freq == 0:
+                    self.target_model.load_state_dict(self.online_model.state_dict())
 
-            if episodes % 10 == 0:
-                print(f"Episode {episodes} -- Reward Over Last 10 episodes: {np.mean(reward_buffer)}")
-                print(f"Epsilon: {self.eps}")
+                if episodes % 10 == 0:
+                    print(f"Episode {episodes} -- Reward Over Last 10 episodes: {np.mean(reward_buffer)}")
+                    print(f"Epsilon: {self.eps}")
 
 
     def update_step(self):
         '''Uses data from replay buffer to update the model.'''
 
-        if len(self.buffer.buffer) < 5_000:
+        if len(self.buffer.buffer) < 1_000:    ## don't update until enough trajectories are collected
             return
 
         try:   
@@ -152,13 +159,11 @@ class DQN():
             max_next_q_values = next_q_values.max(dim=1)[0]
             targets = rewards + (1 - dones.float()) * self.gamma * max_next_q_values
 
-        # print(states.shape)
-        # print(states)
         pred = self.online_model(states)
-        target = pred.clone().detach()    ## change predictions only at index of action taken, otherwise 
-                                                                  ## stay the same as predictions
+        target = pred.clone().detach()   
 
-        target[range(self.sample_size), actions] = targets
+        target[range(self.sample_size), actions] = targets      ## change predictions only at index of action taken, otherwise 
+                                                                ## stay the same as predictions
         
         loss = self.loss_fn(pred, target)
 
@@ -167,9 +172,10 @@ class DQN():
         loss.backward()
         self.optimizer.step()
 
-        # torch.cuda.empty_cache()  ## clear cache to avoid memory issues, especially on GPU
     
 class ReducedActionWrapper(gym.ActionWrapper):
+    '''A custom gymnasium wrapper for limiting the agent to a specified set of actions.'''
+    
     def __init__(self, env, allowed_actions):
         super().__init__(env)
         self.allowed_actions = allowed_actions
@@ -177,9 +183,19 @@ class ReducedActionWrapper(gym.ActionWrapper):
 
     def action(self, action):
         return self.allowed_actions[action]
-
+                
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor")
+    parser.add_argument("--decay_percentage", type=float, default=0.1, help="Epsilon decay")
+    parser.add_argument("--LR", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument("--model_path", type=str, default="models/dqn.pth", help="Model path")
+    parser.add_argument("--rewards_path", type=str, default="rewards/dqn.csv", help="rewards record path")
+
+    args = parser.parse_args()
+
+    
     device = (
     "cuda"
     if torch.cuda.is_available()
@@ -189,7 +205,7 @@ if __name__ == "__main__":
     )
     print(f"Using {device} device")
 
-    final_eps = 0.1
+    final_eps = 0.05
     num_frames = 1_000_000
     
     env = gym.make("ALE/Boxing-v5", obs_type="grayscale", frameskip=1)
@@ -197,42 +213,24 @@ if __name__ == "__main__":
                                     ## starting the environment stochastically by choosing to do nothing
                                     ## for a random number of frames at start
     env = FrameStack(env, num_stack=4)      ## Adds automatic frame stacking for better observability
-    env = ReducedActionWrapper(env, [0, 1, 2, 3, 4, 5])
+    # env = ReducedActionWrapper(env, [0, 1, 2, 3, 4, 5])      ## found that this only resulted in worse performance
     network = NeuralNetwork(4, env.action_space.n).to(device)
     buffer = ReplayBuffer(50_000)
 
-
     dqn = DQN(env, network, buffer, {
-        'lr': 0.0001,
-        'gamma': 0.99,
+        'lr': args.LR,
+        'gamma': args.gamma,
         'initial_eps': 1.0,
-        'eps_decay': np.exp(np.log(final_eps) / (num_frames * .1)),     ## to decay to final_eps after about 10% of training
+        'eps_decay': np.exp(np.log(final_eps) / (num_frames * args.decay_percentage)),     ## to decay to final_eps after about 10% of training 
         'final_eps': final_eps,
         'sample_size': 32,
-        'update_freq': 1  ## how often to update the target network (in terms of episodes)
-    }, device)
-
+        'update_freq': 1 ## how often to update the target network (in terms of episodes)
+    }, device, args.rewards_path)
+  
     try:
         dqn.train(num_frames)
-    except KeyboardInterrupt:
+    except KeyboardInterrupt:   ## allows for automatic saving when training is interrupted
         print("Training interrupted. Saving model...")
-        torch.save(dqn.online_model, "./Atari DQN/boxing_dqn.pth")
-        plt.figure()
-        plt.plot(dqn.all_rewards)
-        plt.xlabel("Episode")
-        plt.ylabel("Episode Reward")
-        plt.title("Episode Rewards During Training")
-        plt.show()
+        torch.save(dqn.online_model, args.model_path)
 
-        with open("episode_rewards.txt", "w") as f:
-            for item in dqn.all_rewards:
-                f.write(f"{item}\n")      ## save episode rewards to a file
-
-
-    plt.figure()
-    plt.plot(dqn.all_rewards)
-    plt.xlabel("Episode")
-    plt.ylabel("Episode Reward")
-    plt.title("Episode Rewards During Training")
-    plt.show()
-    torch.save(dqn.online_model, "./Atari DQN/boxing_dqn.pth")
+    torch.save(dqn.online_model, args.model_path)
