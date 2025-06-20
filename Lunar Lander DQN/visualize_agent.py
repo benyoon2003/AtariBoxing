@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from train import NeuralNetwork
 
-env = gym.make("LunarLander-v2")
+# env = gym.make("LunarLander-v2")
 env = gym.make("LunarLander-v2", render_mode="human")
 
 device = (
@@ -44,10 +44,3 @@ for _ in range(100):
 
 print(np.mean(all_rewards))
 print(np.mean(all_steps))
-
-
-# num_episodes = 300
-# final_eps = 0.1
-# average_steps_per_episode = 150
-
-# print(np.exp(np.log(final_eps) / (num_episodes * .75 * average_steps_per_episode)))
