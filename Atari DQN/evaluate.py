@@ -1,7 +1,7 @@
 import gym
 import numpy as np
 import torch
-from pixels_train_v2 import NeuralNetwork
+from pixels_train import NeuralNetwork
 from gym.wrappers import AtariPreprocessing, FrameStack
     
 
@@ -23,7 +23,7 @@ model.eval()
 
 obs, info = env.reset()
 all_rewards = []
-for _ in range(20):
+for _ in range(100):
     obs, info = env.reset()
     terminated = False
     truncated = False
