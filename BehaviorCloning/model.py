@@ -271,11 +271,5 @@ print("Done")
 with open("loss_data", "a") as f:
     f.write("|||")
 
-# print(model.state_dict())
 torch.save(model.state_dict(), "behavioral_cloning.pt")
 evaluate()
-
-# actions = convertActions('actions')
-# print(actions)
-# obs = convertObservations('observations')
-# print(obs)
