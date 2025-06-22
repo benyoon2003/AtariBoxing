@@ -79,7 +79,7 @@ Uses online model to select actions and target model to evaluate them
     
     max_next_q_values = Q_target(next_state)[next_actions]```
     
-In order to evaluate a trained model further, we recommend calling the pixels_train.py with the following arguments:
+In order to evaluate a trained model further, we recommend calling the pixels_train_double_dqn.py with the following arguments:
    ``` python pixels_train.py --gamma 0.98 --decay_percentage 0.1 --LR 0.0001 --model_path models/double_dqn.pth --rewards_path rewards/double_dqn.csv```
     
 **Double DQN usually offers better training stability and less noisy Q-value estimation.**
