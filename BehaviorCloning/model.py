@@ -1,5 +1,3 @@
-# Source/inspo for majority of implementation: https://docs.pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
-
 import argparse
 import collections
 import gymnasium as gym
