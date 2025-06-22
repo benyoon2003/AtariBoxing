@@ -190,8 +190,8 @@ if __name__ == "__main__":
     parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor")
     parser.add_argument("--decay_percentage", type=float, default=0.1, help="Epsilon decay")
     parser.add_argument("--LR", type=float, default=1e-4, help="Learning rate")
-    parser.add_argument("--model_path", type=str, default="models/dqn.pth", help="Model path")
-    parser.add_argument("--rewards_path", type=str, default="rewards/dqn.csv", help="rewards record path")
+    parser.add_argument("--model_path", type=str, default="./Atari DQN/models/dqn.pth", help="Model path")
+    parser.add_argument("--rewards_path", type=str, default="./Atari DQN/rewards/dqn.csv", help="rewards record path")
 
     args = parser.parse_args()
 
