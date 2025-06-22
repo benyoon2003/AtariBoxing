@@ -93,12 +93,7 @@ def main():
     "sd ": 16,
     "as ": 17,
 }, noop=0, callback=callback, fps=30)
-    # for _ in range(1000):
-    #     action = env.action_space.sample()
-    #     observation, reward, terminated, truncated, info = env.step(action)
-        
-    #     if terminated or truncated:
-    #         env.reset()
+
 
 if __name__ == "__main__":
     main()
