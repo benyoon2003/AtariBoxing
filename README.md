@@ -47,4 +47,37 @@ In order to evaluate a trained model further, we recommend calling the genetic_a
     python genetic_algo.py --eval --model_name <specify name> --episodes_per_eval <we recommend 100> --save_csv <True> --render <False unless you want to painfully watch all 100 rounds>
 
 Running an evaluation command in the above format generates a csv file under the GeneticAlgorithm/logs directory that displays the score per evaluation round as well as ouputs the average score.
+## Deep Q-Network
+This repository contains PyTorch implementations of DQN and Double DQN agents designed to play the Atari Boxing game from OpenAI Gym's ALE suite. The agents are trained using pixel input with frame stacking and reward tracking.
+### main file: pixels_train.py
+This script implements a classic Deep Q-Network (DQN) from scratch.
+Features:
+CNN-based Q-network
+- Replay buffer with random sampling
+- Epsilon-greedy exploration
+- Target network soft update
+- Frame stacking & Atari preprocessing
+- Reward logging per episode to CSV
+
+In order to evaluate a trained model further, we recommend calling the pixels_train.py with the following arguments:
+    python pixels_train.py --gamma 0.98 --decay_percentage 0.1 --LR 0.0001 --model_path models/double_dqn.pth --rewards_path rewards/double_dqn.csv
+    
+Outputs
+Trained model: models/dqn.pth
+Reward CSV: rewards/dqn.csv
+
+In order to plot the episode over total rewards for every episode, Run:
+    python plot_single_rewards.py --csv_path rewards/dqn.csv 
+### Double DQN
+This script provides a Double DQN version of the DQN agent that improves over the original by mitigating overestimation bias.
+Key Differences:
+Uses online model to select actions and target model to evaluate them
+    next_actions = Q_online(next_state).argmax(dim=1)
+    max_next_q_values = Q_target(next_state)[next_actions]
+    
+In order to evaluate a trained model further, we recommend calling the pixels_train.py with the following arguments:
+    python pixels_train.py --gamma 0.98 --decay_percentage 0.1 --LR 0.0001 --model_path models/double_dqn.pth --rewards_path rewards/double_dqn.csv
+    
+**Double DQN usually offers better training stability and less noisy Q-value estimation.**
+
 
