@@ -48,20 +48,3 @@ In order to evaluate a trained model further, we recommend calling the genetic_a
 
 Running an evaluation command in the above format generates a csv file under the GeneticAlgorithm/logs directory that displays the score per evaluation round as well as ouputs the average score.
 
-
-
-# Setup
-You will need to set up a conda environment first:
-
-conda create -n boxing-dqn python=3.11
-
-conda activate boxing-dqn
-
-pip install -r requirements.txt
-
-# DQN Boxing Agent
-To train your agent:
-python boxing.py --train
-
-To visualize your agent playing the game:
-python boxing.py --eval
