@@ -10,11 +10,6 @@ from gym.wrappers import AtariPreprocessing, FrameStack
 from gym import spaces
 import matplotlib.pyplot as plt
 import csv
-## might need to run these commands first
-
-# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-# pip install box2d pygame
-
 
 class NeuralNetwork(nn.Module):
     def __init__(self, input_dim, output_dim):
