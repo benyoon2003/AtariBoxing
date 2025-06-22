@@ -84,4 +84,13 @@ In order to evaluate a trained model further, we recommend calling the pixels_tr
     
 **Double DQN usually offers better training stability and less noisy Q-value estimation.**
 
+## Behavioral Cloning
+This repository contains the necessary files for an implementation of behavioral cloning designed to play the Atari Boxing game from OpenAI's Gym ALE suite. The agents are trained using frame inputs using frame stacking and loss evaluation.
+### Usage
+To train a behavioral cloning model using this repository, you must first run the data_collection.py file. This will open a Boxing environment, controllable by the player. The player should play in this environment. The file will generate the expected directories and numpy array files for use with the model. These are "actions" and "observations" for top level directorties. 
 
+In "actions", each run of data_collection.py will generate a new "actions_[iteration].npy" file, which stores the respective run's action array as a numpy array. 
+
+In "observations", each run will create a new directory titled "observations_[iteration]", which contains files titled "obs_[frame-number].npy". Each of these files is a single stacked frame observed during data collection.
+
+After you have collected data, calling model.py trains a behavioral cloning model on the currently stored data. After the model has trained and been evaluated, an example environment will open that will demonstrate the model playing against the baseline agent.
